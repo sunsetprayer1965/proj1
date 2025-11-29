@@ -25,30 +25,28 @@ A core design advantage is its unified LLM Backend Layer, enabling seamless swit
 
 MASWE implements a directed workflow where artifacts flow between agents in a structured cycle.
 
-```mermaid
 flowchart TD
     subgraph Input
         A[User Prompt / Issue]
     end
 
-    subgraph "Planning Phase"
-        B[Product Manager] -->|PRD & Specs| C[System Architect]
-        C -->|Design Docs & API| D[Developer Agent]
+    subgraph Planning_Phase
+        B[Product Manager] -->|PRD and Specs| C[System Architect]
+        C -->|Design Docs and API| D[Developer Agent]
     end
 
-    subgraph "Development Loop"
+    subgraph Development_Loop
         D -->|Pull Request| E[Reviewer / QA]
-        E -->|Reject + Feedback| D
+        E -->|Reject and Feedback| D
         E -->|Approve| F[Integration Pipeline]
     end
 
-    subgraph "Deployment & Eval"
-        F --> G[CI/CD & Packaging]
-        F --> H[Evaluation (HumanEval/SWE-Bench)]
+    subgraph Deployment_and_Eval
+        F --> G[CI/CD and Packaging]
+        F --> H[Evaluation: HumanEval and SWE-Bench]
     end
 
     A --> B
-```
 
 ## System Components
 
