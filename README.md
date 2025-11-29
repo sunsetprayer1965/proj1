@@ -26,6 +26,7 @@ A core design advantage is its unified LLM Backend Layer, enabling seamless swit
 MASWE implements a directed workflow where artifacts flow between agents in a structured cycle.
 
 flowchart TD
+
     subgraph Input
         A[User Prompt / Issue]
     end
@@ -47,6 +48,7 @@ flowchart TD
     end
 
     A --> B
+
 
 ## System Components
 
