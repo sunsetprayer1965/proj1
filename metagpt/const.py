@@ -1,6 +1,14 @@
 #!/usr/bin/env python
 # -*- coding: utf-8 -*-
-
+"""
+@Time    : 2023/5/1 11:59
+@Author  : alexanderwu
+@File    : const.py
+@Modified By: mashenquan, 2023-11-1. According to Section 2.2.1 and 2.2.2 of RFC 116, added key definitions for
+        common properties in the Message.
+@Modified By: mashenquan, 2023-11-27. Defines file repository paths according to Section 2.2.3.4 of RFC 135.
+@Modified By: mashenquan, 2023/12/5. Add directories for code summarization..
+"""
 import os
 from pathlib import Path
 
@@ -12,6 +20,12 @@ import metagpt
 def get_metagpt_package_root():
     """Get the root directory of the installed package."""
     package_root = Path(metagpt.__file__).parent.parent
+    for i in (".git", ".project_root", ".gitignore"):
+        if (package_root / i).exists():
+            break
+    else:
+        package_root = Path.cwd()
+
     logger.info(f"Package root set to {str(package_root)}")
     return package_root
 
@@ -26,12 +40,6 @@ def get_metagpt_root():
     else:
         # Fallback to package root if no environment variable is set
         project_root = get_metagpt_package_root()
-        for i in (".git", ".project_root", ".gitignore"):
-            if (project_root / i).exists():
-                break
-        else:
-            project_root = Path.cwd()
-
     return project_root
 
 
@@ -41,10 +49,7 @@ METAGPT_ROOT = get_metagpt_root()  # Dependent on METAGPT_PROJECT_ROOT
 DEFAULT_WORKSPACE_ROOT = METAGPT_ROOT / "workspace"
 
 EXAMPLE_PATH = METAGPT_ROOT / "examples"
-EXAMPLE_DATA_PATH = EXAMPLE_PATH / "data"
 DATA_PATH = METAGPT_ROOT / "data"
-DABENCH_PATH = EXAMPLE_PATH / "di/InfiAgent-DABench/data"
-EXAMPLE_BENCHMARK_PATH = EXAMPLE_PATH / "data/rag_bm"
 TEST_DATA_PATH = METAGPT_ROOT / "tests/data"
 RESEARCH_PATH = DATA_PATH / "research"
 TUTORIAL_PATH = DATA_PATH / "tutorial_docx"
@@ -65,11 +70,6 @@ SKILL_DIRECTORY = SOURCE_ROOT / "skills"
 TOOL_SCHEMA_PATH = METAGPT_ROOT / "metagpt/tools/schemas"
 TOOL_LIBS_PATH = METAGPT_ROOT / "metagpt/tools/libs"
 
-# TEMPLATE PATH
-TEMPLATE_FOLDER_PATH = METAGPT_ROOT / "template"
-VUE_TEMPLATE_PATH = TEMPLATE_FOLDER_PATH / "vue_template"
-REACT_TEMPLATE_PATH = TEMPLATE_FOLDER_PATH / "react_template"
-
 # REAL CONSTS
 
 MEM_TTL = 24 * 30 * 3600
@@ -80,12 +80,11 @@ MESSAGE_ROUTE_CAUSE_BY = "cause_by"
 MESSAGE_META_ROLE = "role"
 MESSAGE_ROUTE_TO_ALL = "<all>"
 MESSAGE_ROUTE_TO_NONE = "<none>"
-MESSAGE_ROUTE_TO_SELF = "<self>"  # Add this tag to replace `ActionOutput`
-
 
 REQUIREMENT_FILENAME = "requirement.txt"
 BUGFIX_FILENAME = "bugfix.txt"
 PACKAGE_REQUIREMENTS_FILENAME = "requirements.txt"
+CODE_PLAN_AND_CHANGE_FILENAME = "code_plan_and_change.json"
 
 DOCS_FILE_REPO = "docs"
 PRDS_FILE_REPO = "docs/prd"
@@ -104,13 +103,11 @@ TEST_OUTPUTS_FILE_REPO = "test_outputs"
 CODE_SUMMARIES_FILE_REPO = "docs/code_summary"
 CODE_SUMMARIES_PDF_FILE_REPO = "resources/code_summary"
 RESOURCES_FILE_REPO = "resources"
-SD_OUTPUT_FILE_REPO = DEFAULT_WORKSPACE_ROOT
+SD_OUTPUT_FILE_REPO = "resources/sd_output"
 GRAPH_REPO_FILE_REPO = "docs/graph_repo"
-VISUAL_GRAPH_REPO_FILE_REPO = "resources/graph_db"
 CLASS_VIEW_FILE_REPO = "docs/class_view"
 
 YAPI_URL = "http://yapi.deepwisdomai.com/"
-SD_URL = "http://172.31.0.51:49094"
 
 DEFAULT_LANGUAGE = "English"
 DEFAULT_MAX_TOKENS = 1500
@@ -125,6 +122,7 @@ BASE64_FORMAT = "base64"
 
 # REDIS
 REDIS_KEY = "REDIS_KEY"
+LLM_API_TIMEOUT = 300
 
 # Message id
 IGNORED_MESSAGE_ID = "0"
@@ -133,32 +131,3 @@ IGNORED_MESSAGE_ID = "0"
 GENERALIZATION = "Generalize"
 COMPOSITION = "Composite"
 AGGREGATION = "Aggregate"
-
-# Timeout
-USE_CONFIG_TIMEOUT = 0  # Using llm.timeout configuration.
-LLM_API_TIMEOUT = 300
-
-# Assistant alias
-ASSISTANT_ALIAS = "response"
-
-# Markdown
-MARKDOWN_TITLE_PREFIX = "## "
-
-# Reporter
-METAGPT_REPORTER_DEFAULT_URL = os.environ.get("METAGPT_REPORTER_URL", "")
-
-# Metadata defines
-AGENT = "agent"
-IMAGES = "images"
-
-# SWE agent
-SWE_SETUP_PATH = get_metagpt_package_root() / "metagpt/tools/swe_agent_commands/setup_default.sh"
-
-# experience pool
-EXPERIENCE_MASK = "<experience>"
-
-# TeamLeader's name
-TEAMLEADER_NAME = "Mike"
-
-DEFAULT_MIN_TOKEN_COUNT = 10000
-DEFAULT_MAX_TOKEN_COUNT = 100000000

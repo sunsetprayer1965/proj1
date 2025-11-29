@@ -1,12 +1,11 @@
 from __future__ import annotations
 
 import json
-from typing import List
 
 from pydantic import BaseModel, Field
 
-from metagpt.actions.di.ask_review import AskReview, ReviewConst
-from metagpt.actions.di.write_plan import (
+from metagpt.actions.ci.ask_review import AskReview, ReviewConst
+from metagpt.actions.ci.write_plan import (
     WritePlan,
     precheck_update_plan_from_rsp,
     update_plan_from_rsp,
@@ -14,8 +13,6 @@ from metagpt.actions.di.write_plan import (
 from metagpt.logs import logger
 from metagpt.memory import Memory
 from metagpt.schema import Message, Plan, Task, TaskResult
-from metagpt.strategy.task_type import TaskType
-from metagpt.utils.common import remove_comments
 
 STRUCTURAL_CONTEXT = """
 ## User Requirement
@@ -28,32 +25,6 @@ STRUCTURAL_CONTEXT = """
 {current_task}
 """
 
-PLAN_STATUS = """
-## Finished Tasks
-### code
-```python
-{code_written}
-```
-
-### execution result
-{task_results}
-
-## Current Task
-{current_task}
-
-## Finished Section of Current Task
-### code
-```python
-{current_task_code}
-```
-### execution result
-{current_task_result}
-
-## Task Guidance
-Write code for the incomplete sections of 'Current Task'. And avoid duplicating code from 'Finished Tasks' and 'Finished Section of Current Task', such as repeated import of packages, reading data, etc.
-Specifically, {guidance}
-"""
-
 
 class Planner(BaseModel):
     plan: Plan
@@ -61,6 +32,7 @@ class Planner(BaseModel):
         default_factory=Memory
     )  # memory for working on each task, discarded each time a task is done
     auto_run: bool = False
+    use_tools: bool = False
 
     def __init__(self, goal: str = "", plan: Plan = None, **kwargs):
         plan = plan or Plan(goal=goal)
@@ -81,7 +53,7 @@ class Planner(BaseModel):
         plan_confirmed = False
         while not plan_confirmed:
             context = self.get_useful_memories()
-            rsp = await WritePlan().run(context, max_tasks=max_tasks)
+            rsp = await WritePlan().run(context, max_tasks=max_tasks, use_tools=self.use_tools)
             self.working_memory.add(Message(content=rsp, role="assistant", cause_by=WritePlan))
 
             # precheck plan before asking reviews
@@ -128,7 +100,7 @@ class Planner(BaseModel):
         If human confirms the task result, then we deem the task completed, regardless of whether the code run succeeds;
         if auto mode, then the code run has to succeed for the task to be considered completed.
         """
-        auto_run = auto_run if auto_run is not None else self.auto_run
+        auto_run = auto_run or self.auto_run
         if not auto_run:
             context = self.get_useful_memories()
             review, confirmed = await AskReview().run(
@@ -150,7 +122,7 @@ class Planner(BaseModel):
         )  # "confirm, ... (more content, such as changing downstream tasks)"
         if confirmed_and_more:
             self.working_memory.add(Message(content=review, role="user", cause_by=AskReview))
-            await self.update_plan()
+            await self.update_plan(review)
 
     def get_useful_memories(self, task_exclude_field=None) -> list[Message]:
         """find useful memories only to reduce context length and improve performance"""
@@ -165,28 +137,3 @@ class Planner(BaseModel):
         context_msg = [Message(content=context, role="user")]
 
         return context_msg + self.working_memory.get()
-
-    def get_plan_status(self, exclude: List[str] = None) -> str:
-        # prepare components of a plan status
-        exclude = exclude or []
-        exclude_prompt = "omit here"
-        finished_tasks = self.plan.get_finished_tasks()
-        code_written = [remove_comments(task.code) for task in finished_tasks]
-        code_written = "\n\n".join(code_written)
-        task_results = [task.result for task in finished_tasks]
-        task_results = "\n\n".join(task_results)
-        task_type_name = self.current_task.task_type
-        task_type = TaskType.get_type(task_type_name)
-        guidance = task_type.guidance if task_type else ""
-
-        # combine components in a prompt
-        prompt = PLAN_STATUS.format(
-            code_written=code_written if "code" not in exclude else exclude_prompt,
-            task_results=task_results if "task_result" not in exclude else exclude_prompt,
-            current_task=self.current_task.instruction,
-            current_task_code=self.current_task.code if "code" not in exclude else exclude_prompt,
-            current_task_result=self.current_task.result if "task_result" not in exclude else exclude_prompt,
-            guidance=guidance,
-        )
-
-        return prompt

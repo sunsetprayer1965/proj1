@@ -7,14 +7,10 @@
 """
 import asyncio
 from pathlib import Path
-from typing import Any, Optional
+from typing import Optional
 
-import faiss
-from llama_index.core import VectorStoreIndex, load_index_from_storage
-from llama_index.core.embeddings import BaseEmbedding
-from llama_index.core.schema import Document, QueryBundle, TextNode
-from llama_index.core.storage import StorageContext
-from llama_index.vector_stores.faiss import FaissVectorStore
+from langchain.vectorstores import FAISS
+from langchain_core.embeddings import Embeddings
 
 from metagpt.document import IndexableDocument
 from metagpt.document_store.base_store import LocalStore
@@ -24,50 +20,36 @@ from metagpt.utils.embedding import get_embedding
 
 class FaissStore(LocalStore):
     def __init__(
-        self, raw_data: Path, cache_dir=None, meta_col="source", content_col="output", embedding: BaseEmbedding = None
+        self, raw_data: Path, cache_dir=None, meta_col="source", content_col="output", embedding: Embeddings = None
     ):
         self.meta_col = meta_col
         self.content_col = content_col
         self.embedding = embedding or get_embedding()
-        self.store: VectorStoreIndex
         super().__init__(raw_data, cache_dir)
 
-    def _load(self) -> Optional["VectorStoreIndex"]:
-        index_file, store_file = self._get_index_and_store_fname()
+    def _load(self) -> Optional["FaissStore"]:
+        index_file, store_file = self._get_index_and_store_fname(index_ext=".faiss")  # langchain FAISS using .faiss
 
         if not (index_file.exists() and store_file.exists()):
             logger.info("Missing at least one of index_file/store_file, load failed and return None")
             return None
-        vector_store = FaissVectorStore.from_persist_dir(persist_dir=self.cache_dir)
-        storage_context = StorageContext.from_defaults(persist_dir=self.cache_dir, vector_store=vector_store)
-        index = load_index_from_storage(storage_context, embed_model=self.embedding)
 
-        return index
+        return FAISS.load_local(self.raw_data_path.parent, self.embedding, self.fname)
 
-    def _write(self, docs: list[str], metadatas: list[dict[str, Any]]) -> VectorStoreIndex:
-        assert len(docs) == len(metadatas)
-        documents = [Document(text=doc, metadata=metadatas[idx]) for idx, doc in enumerate(docs)]
-
-        vector_store = FaissVectorStore(faiss_index=faiss.IndexFlatL2(1536))
-        storage_context = StorageContext.from_defaults(vector_store=vector_store)
-        index = VectorStoreIndex.from_documents(
-            documents=documents, storage_context=storage_context, embed_model=self.embedding
-        )
-
-        return index
+    def _write(self, docs, metadatas):
+        store = FAISS.from_texts(docs, self.embedding, metadatas=metadatas)
+        return store
 
     def persist(self):
-        self.store.storage_context.persist(self.cache_dir)
+        self.store.save_local(self.raw_data_path.parent, self.fname)
 
-    def search(self, query: str, expand_cols=False, sep="\n", *args, k=5, **kwargs):
-        retriever = self.store.as_retriever(similarity_top_k=k)
-        rsp = retriever.retrieve(QueryBundle(query_str=query, embedding=self.embedding.get_text_embedding(query)))
-
+    def search(self, query, expand_cols=False, sep="\n", *args, k=5, **kwargs):
+        rsp = self.store.similarity_search(query, k=k, **kwargs)
         logger.debug(rsp)
         if expand_cols:
-            return str(sep.join([f"{x.node.text}: {x.node.metadata}" for x in rsp]))
+            return str(sep.join([f"{x.page_content}: {x.metadata}" for x in rsp]))
         else:
-            return str(sep.join([f"{x.node.text}" for x in rsp]))
+            return str(sep.join([f"{x.page_content}" for x in rsp]))
 
     async def asearch(self, *args, **kwargs):
         return await asyncio.to_thread(self.search, *args, **kwargs)
@@ -85,12 +67,8 @@ class FaissStore(LocalStore):
 
     def add(self, texts: list[str], *args, **kwargs) -> list[str]:
         """FIXME: Currently, the store is not updated after adding."""
-        texts_embeds = self.embedding.get_text_embedding_batch(texts)
-        nodes = [TextNode(text=texts[idx], embedding=embed) for idx, embed in enumerate(texts_embeds)]
-        self.store.insert_nodes(nodes)
-
-        return []
+        return self.store.add_texts(texts)
 
     def delete(self, *args, **kwargs):
-        """Currently, faiss does not provide a delete interface."""
+        """Currently, langchain does not provide a delete interface."""
         raise NotImplementedError

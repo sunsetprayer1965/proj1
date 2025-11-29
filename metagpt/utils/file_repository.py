@@ -14,9 +14,11 @@ from datetime import datetime
 from pathlib import Path
 from typing import Dict, List, Set
 
+import aiofiles
+
 from metagpt.logs import logger
 from metagpt.schema import Document
-from metagpt.utils.common import aread, awrite
+from metagpt.utils.common import aread
 from metagpt.utils.json_to_markdown import json_to_markdown
 
 
@@ -53,7 +55,8 @@ class FileRepository:
         pathname = self.workdir / filename
         pathname.parent.mkdir(parents=True, exist_ok=True)
         content = content if content else ""  # avoid `argument must be str, not None` to make it continue
-        await awrite(filename=str(pathname), data=content)
+        async with aiofiles.open(str(pathname), mode="w") as writer:
+            await writer.write(content)
         logger.info(f"save to: {str(pathname)}")
 
         if dependencies is not None:
@@ -198,9 +201,8 @@ class FileRepository:
         :type dependencies: List[str], optional
         """
 
-        doc = await self.save(filename=doc.filename, content=doc.content, dependencies=dependencies)
+        await self.save(filename=doc.filename, content=doc.content, dependencies=dependencies)
         logger.debug(f"File Saved: {str(doc.filename)}")
-        return doc
 
     async def save_pdf(self, doc: Document, with_suffix: str = ".md", dependencies: List[str] = None):
         """Save a Document instance as a PDF file.
@@ -217,9 +219,8 @@ class FileRepository:
         """
         m = json.loads(doc.content)
         filename = Path(doc.filename).with_suffix(with_suffix) if with_suffix is not None else Path(doc.filename)
-        doc = await self.save(filename=str(filename), content=json_to_markdown(m), dependencies=dependencies)
+        await self.save(filename=str(filename), content=json_to_markdown(m), dependencies=dependencies)
         logger.debug(f"File Saved: {str(filename)}")
-        return doc
 
     async def delete(self, filename: Path | str):
         """Delete a file from the file repository.

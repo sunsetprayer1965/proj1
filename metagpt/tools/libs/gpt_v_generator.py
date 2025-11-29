@@ -5,14 +5,13 @@
 @Author  : mannaandpoem
 @File    : gpt_v_generator.py
 """
-import re
+import os
 from pathlib import Path
-from typing import Optional
 
-from metagpt.config2 import Config
-from metagpt.logs import logger
+from metagpt.const import DEFAULT_WORKSPACE_ROOT
 from metagpt.tools.tool_registry import register_tool
-from metagpt.utils.common import CodeParser, encode_image
+from metagpt.tools.tool_type import ToolType
+from metagpt.utils.common import encode_image
 
 ANALYZE_LAYOUT_PROMPT = """You are now a UI/UX designer, please generate layout information for this image:
 
@@ -29,19 +28,21 @@ As the design pays tribute to large companies, sometimes it is normal for some c
 Now, please generate the corresponding webpage code including HTML, CSS and JavaScript:"""
 
 
-@register_tool(tags=["image2webpage"], include_functions=["__init__", "generate_webpages", "save_webpages"])
+@register_tool(
+    tool_type=ToolType.IMAGE2WEBPAGE.type_name, include_functions=["__init__", "generate_webpages", "save_webpages"]
+)
 class GPTvGenerator:
-    """Class for generating webpage code from a given webpage screenshot.
+    """Class for generating webpages at once.
 
     This class provides methods to generate webpages including all code (HTML, CSS, and JavaScript) based on an image.
     It utilizes a vision model to analyze the layout from an image and generate webpage codes accordingly.
     """
 
-    def __init__(self, config: Optional[Config] = None):
+    def __init__(self):
         """Initialize GPTvGenerator class with default values from the configuration."""
+        from metagpt.config2 import config
         from metagpt.llm import LLM
 
-        config = config if config else Config.default()
         self.llm = LLM(llm_config=config.get_openai_llm())
         self.llm.model = "gpt-4-vision-preview"
 
@@ -74,34 +75,50 @@ class GPTvGenerator:
         return await self.llm.aask(msg=prompt, images=[encode_image(image_path)])
 
     @staticmethod
-    def save_webpages(webpages: str, save_folder_name: str = "example") -> Path:
+    def save_webpages(image_path: str, webpages: str) -> Path:
         """Save webpages including all code (HTML, CSS, and JavaScript) at once.
 
         Args:
+            image_path (str): The path of the image file.
             webpages (str): The generated webpages content.
-            save_folder_name (str, optional): The name of the folder to save the webpages. Defaults to 'example'.
 
         Returns:
             Path: The path of the saved webpages.
         """
         # Create a folder called webpages in the workspace directory to store HTML, CSS, and JavaScript files
-        webpages_path = Config.default().workspace.path / "webpages" / save_folder_name
-        logger.info(f"code will be saved at {webpages_path}")
-        webpages_path.mkdir(parents=True, exist_ok=True)
+        webpages_path = DEFAULT_WORKSPACE_ROOT / "webpages" / Path(image_path).stem
+        os.makedirs(webpages_path, exist_ok=True)
 
         index_path = webpages_path / "index.html"
-        index_path.write_text(CodeParser.parse_code(text=webpages, lang="html"))
+        try:
+            index = webpages.split("```html")[1].split("```")[0]
+            style_path = None
+            if "styles.css" in index:
+                style_path = webpages_path / "styles.css"
+            elif "style.css" in index:
+                style_path = webpages_path / "style.css"
+            style = webpages.split("```css")[1].split("```")[0] if style_path else ""
 
-        extract_and_save_code(folder=webpages_path, text=webpages, pattern="styles?.css", language="css")
+            js_path = None
+            if "scripts.js" in index:
+                js_path = webpages_path / "scripts.js"
+            elif "script.js" in index:
+                js_path = webpages_path / "script.js"
 
-        extract_and_save_code(folder=webpages_path, text=webpages, pattern="scripts?.js", language="javascript")
+            js = webpages.split("```javascript")[1].split("```")[0] if js_path else ""
+        except IndexError:
+            raise ValueError(f"No html or css or js code found in the result. \nWebpages: {webpages}")
+
+        try:
+            with open(index_path, "w", encoding="utf-8") as f:
+                f.write(index)
+            if style_path:
+                with open(style_path, "w", encoding="utf-8") as f:
+                    f.write(style)
+            if js_path:
+                with open(js_path, "w", encoding="utf-8") as f:
+                    f.write(js)
+        except FileNotFoundError as e:
+            raise FileNotFoundError(f"Cannot save the webpages to {str(webpages_path)}") from e
 
         return webpages_path
-
-
-def extract_and_save_code(folder, text, pattern, language):
-    word = re.search(pattern, text)
-    if word:
-        path = folder / word.group(0)
-        code = CodeParser.parse_code(text=text, lang=language)
-        path.write_text(code, encoding="utf-8")

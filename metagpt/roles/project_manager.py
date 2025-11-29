@@ -5,12 +5,13 @@
 @Author  : alexanderwu
 @File    : project_manager.py
 """
+
 from metagpt.actions import WriteTasks
 from metagpt.actions.design_api import WriteDesign
-from metagpt.roles.di.role_zero import RoleZero
+from metagpt.roles.role import Role
 
 
-class ProjectManager(RoleZero):
+class ProjectManager(Role):
     """
     Represents a Project Manager role responsible for overseeing project execution and team efficiency.
 
@@ -29,22 +30,8 @@ class ProjectManager(RoleZero):
     )
     constraints: str = "use same language as user requirement"
 
-    instruction: str = """Use WriteTasks tool to write a project task list"""
-    max_react_loop: int = 1  # FIXME: Read and edit files requires more steps, consider later
-    tools: list[str] = ["Editor:write,read,similarity_search", "RoleZero", "WriteTasks"]
-
     def __init__(self, **kwargs) -> None:
         super().__init__(**kwargs)
-        # NOTE: The following init setting will only be effective when self.use_fixed_sop is changed to True
-        self.enable_memory = False
+
         self.set_actions([WriteTasks])
         self._watch([WriteDesign])
-
-    def _update_tool_execution(self):
-        wt = WriteTasks()
-        self.tool_execution_map.update(
-            {
-                "WriteTasks.run": wt.run,
-                "WriteTasks": wt.run,  # alias
-            }
-        )

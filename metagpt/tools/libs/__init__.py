@@ -10,14 +10,8 @@ from metagpt.tools.libs import (
     sd_engine,
     gpt_v_generator,
     web_scraping,
-    # email_login,
-    terminal,
-    editor,
-    browser,
-    deployer,
-    git,
+    email_login,
 )
-from metagpt.tools.libs.env import get_env, set_get_env_entry, default_get_env, get_env_description, get_env_default
 
 _ = (
     data_preprocess,
@@ -25,15 +19,5 @@ _ = (
     sd_engine,
     gpt_v_generator,
     web_scraping,
-    # email_login,
-    terminal,
-    editor,
-    browser,
-    deployer,
-    git,
-    get_env,
-    get_env_default,
-    get_env_description,
-    set_get_env_entry,
-    default_get_env,
+    email_login,
 )  # Avoid pre-commit error

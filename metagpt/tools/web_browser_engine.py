@@ -3,9 +3,9 @@
 from __future__ import annotations
 
 import importlib
-from typing import Annotated, Any, Callable, Coroutine, Optional, Union, overload
+from typing import Any, Callable, Coroutine, Optional, Union, overload
 
-from pydantic import BaseModel, ConfigDict, Field, model_validator
+from pydantic import BaseModel, ConfigDict, model_validator
 
 from metagpt.configs.browser_config import BrowserConfig
 from metagpt.tools import WebBrowserEngineType
@@ -29,10 +29,7 @@ class WebBrowserEngine(BaseModel):
     model_config = ConfigDict(arbitrary_types_allowed=True, extra="allow")
 
     engine: WebBrowserEngineType = WebBrowserEngineType.PLAYWRIGHT
-    run_func: Annotated[
-        Optional[Callable[..., Coroutine[Any, Any, Union[WebPage, list[WebPage]]]]],
-        Field(exclude=True),
-    ] = None
+    run_func: Optional[Callable[..., Coroutine[Any, Any, Union[WebPage, list[WebPage]]]]] = None
     proxy: Optional[str] = None
 
     @model_validator(mode="after")
@@ -95,14 +92,14 @@ class WebBrowserEngine(BaseModel):
         return cls(**data, **kwargs)
 
     @overload
-    async def run(self, url: str, per_page_timeout: float = None) -> WebPage:
+    async def run(self, url: str) -> WebPage:
         ...
 
     @overload
-    async def run(self, url: str, *urls: str, per_page_timeout: float = None) -> list[WebPage]:
+    async def run(self, url: str, *urls: str) -> list[WebPage]:
         ...
 
-    async def run(self, url: str, *urls: str, per_page_timeout: float = None) -> WebPage | list[WebPage]:
+    async def run(self, url: str, *urls: str) -> WebPage | list[WebPage]:
         """Runs the browser engine to load one or more web pages.
 
         This method is the implementation of the overloaded run signatures. It delegates the task
@@ -111,9 +108,8 @@ class WebBrowserEngine(BaseModel):
         Args:
             url: The URL of the first web page to load.
             *urls: Additional URLs of web pages to load, if any.
-            per_page_timeout: The maximum time for fetching a single page in seconds.
 
         Returns:
             A WebPage object if a single URL is provided, or a list of WebPage objects if multiple URLs are provided.
         """
-        return await self.run_func(url, *urls, per_page_timeout=per_page_timeout)
+        return await self.run_func(url, *urls)

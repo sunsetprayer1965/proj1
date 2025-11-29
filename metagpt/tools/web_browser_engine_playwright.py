@@ -39,11 +39,10 @@ class PlaywrightWrapper(BaseModel):
             if not any(str.startswith(i, "--proxy-server=") for i in args):
                 launch_kwargs["proxy"] = {"server": self.proxy}
 
-        for key in ["ignore_https_errors", "java_script_enabled", "extra_http_headers", "user_agent"]:
-            if key in kwargs:
-                self.context_kwargs[key] = kwargs[key]
+        if "ignore_https_errors" in kwargs:
+            self.context_kwargs["ignore_https_errors"] = kwargs["ignore_https_errors"]
 
-    async def run(self, url: str, *urls: str, per_page_timeout: float = None) -> WebPage | list[WebPage]:
+    async def run(self, url: str, *urls: str) -> WebPage | list[WebPage]:
         async with async_playwright() as ap:
             browser_type = getattr(ap, self.browser_type)
             await self._run_precheck(browser_type)
@@ -51,17 +50,11 @@ class PlaywrightWrapper(BaseModel):
             _scrape = self._scrape
 
             if urls:
-                return await asyncio.gather(
-                    _scrape(browser, url, per_page_timeout), *(_scrape(browser, i, per_page_timeout) for i in urls)
-                )
-            return await _scrape(browser, url, per_page_timeout)
+                return await asyncio.gather(_scrape(browser, url), *(_scrape(browser, i) for i in urls))
+            return await _scrape(browser, url)
 
-    async def _scrape(self, browser, url, timeout: float = None):
+    async def _scrape(self, browser, url):
         context = await browser.new_context(**self.context_kwargs)
-
-        if timeout is not None:
-            context.set_default_timeout(timeout * 1000)  # playwright uses milliseconds.
-
         page = await context.new_page()
         async with page:
             try:

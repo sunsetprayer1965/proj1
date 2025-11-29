@@ -5,14 +5,15 @@
 @Author  : alexanderwu
 @File    : project_management_an.py
 """
-from typing import List, Optional
+from typing import List
 
 from metagpt.actions.action_node import ActionNode
+from metagpt.logs import logger
 
-REQUIRED_PACKAGES = ActionNode(
-    key="Required packages",
-    expected_type=Optional[List[str]],
-    instruction="Provide required packages The response language should correspond to the context and requirements.",
+REQUIRED_PYTHON_PACKAGES = ActionNode(
+    key="Required Python packages",
+    expected_type=List[str],
+    instruction="Provide required Python packages in requirements.txt format.",
     example=["flask==1.1.2", "bcrypt==3.2.0"],
 )
 
@@ -27,9 +28,7 @@ LOGIC_ANALYSIS = ActionNode(
     key="Logic Analysis",
     expected_type=List[List[str]],
     instruction="Provide a list of files with the classes/methods/functions to be implemented, "
-    "including dependency analysis and imports."
-    "Ensure consistency between System Design and Logic Analysis; the files must match exactly. "
-    "If the file is written in Vue or React, use Tailwind CSS for styling.",
+    "including dependency analysis and imports.",
     example=[
         ["game.py", "Contains Game class and ... functions"],
         ["main.py", "Contains main function, from game import Game"],
@@ -99,7 +98,7 @@ ANYTHING_UNCLEAR_PM = ActionNode(
 )
 
 NODES = [
-    REQUIRED_PACKAGES,
+    REQUIRED_PYTHON_PACKAGES,
     REQUIRED_OTHER_LANGUAGE_PACKAGES,
     LOGIC_ANALYSIS,
     TASK_LIST,
@@ -109,7 +108,7 @@ NODES = [
 ]
 
 REFINED_NODES = [
-    REQUIRED_PACKAGES,
+    REQUIRED_PYTHON_PACKAGES,
     REQUIRED_OTHER_LANGUAGE_PACKAGES,
     REFINED_LOGIC_ANALYSIS,
     REFINED_TASK_LIST,
@@ -120,3 +119,14 @@ REFINED_NODES = [
 
 PM_NODE = ActionNode.from_children("PM_NODE", NODES)
 REFINED_PM_NODE = ActionNode.from_children("REFINED_PM_NODE", REFINED_NODES)
+
+
+def main():
+    prompt = PM_NODE.compile(context="")
+    logger.info(prompt)
+    prompt = REFINED_PM_NODE.compile(context="")
+    logger.info(prompt)
+
+
+if __name__ == "__main__":
+    main()

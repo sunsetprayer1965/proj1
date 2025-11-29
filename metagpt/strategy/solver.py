@@ -39,7 +39,7 @@ class NaiveSolver(BaseSolver):
         self.graph.topological_sort()
         for key in self.graph.execution_order:
             op = self.graph.nodes[key]
-            await op.fill(req=self.context, llm=self.llm, mode="root")
+            await op.fill(self.context, self.llm, mode="root")
 
 
 class TOTSolver(BaseSolver):
@@ -49,8 +49,8 @@ class TOTSolver(BaseSolver):
         raise NotImplementedError
 
 
-class DataInterpreterSolver(BaseSolver):
-    """DataInterpreterSolver: Write&Run code in the graph"""
+class CodeInterpreterSolver(BaseSolver):
+    """CodeInterpreterSolver: Write&Run code in the graph"""
 
     async def solve(self):
         raise NotImplementedError

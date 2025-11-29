@@ -6,8 +6,7 @@
 @File    : text_to_speech.py
 @Desc    : Text-to-Speech skill, which provides text-to-speech functionality
 """
-from typing import Optional
-
+import metagpt.config2
 from metagpt.config2 import Config
 from metagpt.const import BASE64_FORMAT
 from metagpt.tools.azure_tts import oas3_azsure_tts
@@ -21,7 +20,7 @@ async def text_to_speech(
     voice="zh-CN-XiaomoNeural",
     style="affectionate",
     role="Girl",
-    config: Optional[Config] = None,
+    config: Config = metagpt.config2.config,
 ):
     """Text to speech
     For more details, check out:`https://learn.microsoft.com/en-us/azure/ai-services/speech-service/language-support?tabs=tts`
@@ -39,7 +38,7 @@ async def text_to_speech(
     :return: Returns the Base64-encoded .wav/.mp3 file data if successful, otherwise an empty string.
 
     """
-    config = config if config else Config.default()
+
     subscription_key = config.azure_tts_subscription_key
     region = config.azure_tts_region
     if subscription_key and region:

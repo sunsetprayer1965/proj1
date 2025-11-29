@@ -9,7 +9,6 @@ NOTE: You should use typing.List instead of list to do type annotation. Because 
   we can use typing to extract the type of the node, but we cannot use built-in list to extract.
 """
 import json
-import re
 import typing
 from enum import Enum
 from typing import Any, Dict, List, Optional, Tuple, Type, Union
@@ -18,15 +17,11 @@ from pydantic import BaseModel, Field, create_model, model_validator
 from tenacity import retry, stop_after_attempt, wait_random_exponential
 
 from metagpt.actions.action_outcls_registry import register_action_outcls
-from metagpt.const import MARKDOWN_TITLE_PREFIX, USE_CONFIG_TIMEOUT
-from metagpt.exp_pool import exp_cache
-from metagpt.exp_pool.serializers import ActionNodeSerializer
 from metagpt.llm import BaseLLM
 from metagpt.logs import logger
 from metagpt.provider.postprocess.llm_output_postprocess import llm_output_postprocess
 from metagpt.utils.common import OutputParser, general_after_log
 from metagpt.utils.human_interaction import HumanInteraction
-from metagpt.utils.sanitize import sanitize
 
 
 class ReviewMode(Enum):
@@ -42,16 +37,8 @@ class ReviseMode(Enum):
 
 TAG = "CONTENT"
 
-
-class FillMode(Enum):
-    CODE_FILL = "code_fill"
-    XML_FILL = "xml_fill"
-    SINGLE_FILL = "single_fill"
-
-
 LANGUAGE_CONSTRAINT = "Language: Please use the same language as Human INPUT."
 FORMAT_CONSTRAINT = f"Format: output wrapped inside [{TAG}][/{TAG}] like format example, nothing else."
-
 
 SIMPLE_TEMPLATE = """
 ## context
@@ -125,7 +112,7 @@ Follow format example's {prompt_schema} format, generate output and make sure it
 """
 
 
-def dict_to_markdown(d, prefix=MARKDOWN_TITLE_PREFIX, kv_sep="\n", postfix="\n"):
+def dict_to_markdown(d, prefix="- ", kv_sep="\n", postfix="\n"):
     markdown_str = ""
     for key, value in d.items():
         markdown_str += f"{prefix}{key}{kv_sep}{value}{postfix}"
@@ -249,19 +236,12 @@ class ActionNode:
         """基于pydantic v2的模型动态生成，用来检验结果类型正确性"""
 
         def check_fields(cls, values):
-            all_fields = set(mapping.keys())
-            required_fields = set()
-            for k, v in mapping.items():
-                type_v, field_info = v
-                if ActionNode.is_optional_type(type_v):
-                    continue
-                required_fields.add(k)
-
+            required_fields = set(mapping.keys())
             missing_fields = required_fields - set(values.keys())
             if missing_fields:
                 raise ValueError(f"Missing fields: {missing_fields}")
 
-            unrecognized_fields = set(values.keys()) - all_fields
+            unrecognized_fields = set(values.keys()) - required_fields
             if unrecognized_fields:
                 logger.warning(f"Unrecognized fields: {unrecognized_fields}")
             return values
@@ -350,7 +330,7 @@ class ActionNode:
 
     def compile_to(self, i: Dict, schema, kv_sep) -> str:
         if schema == "json":
-            return json.dumps(i, indent=4, ensure_ascii=False)
+            return json.dumps(i, indent=4)
         elif schema == "markdown":
             return dict_to_markdown(i, kv_sep=kv_sep)
         else:
@@ -359,7 +339,10 @@ class ActionNode:
     def tagging(self, text, schema, tag="") -> str:
         if not tag:
             return text
-        return f"[{tag}]\n{text}\n[/{tag}]"
+        if schema == "json":
+            return f"[{tag}]\n" + text + f"\n[/{tag}]"
+        else:  # markdown
+            return f"[{tag}]\n" + text + f"\n[/{tag}]"
 
     def _compile_f(self, schema, mode, tag, format_func, kv_sep, exclude=None) -> str:
         nodes = self.to_dict(format_func=format_func, mode=mode, exclude=exclude)
@@ -391,7 +374,7 @@ class ActionNode:
             schema="markdown": 编译context, example(markdown), instruction(markdown), constraint, action
         """
         if schema == "raw":
-            return f"{context}\n\n## Actions\n{LANGUAGE_CONSTRAINT}\n{self.instruction}"
+            return context + "\n\n## Actions\n" + LANGUAGE_CONSTRAINT + "\n" + self.instruction
 
         ### 直接使用 pydantic BaseModel 生成 instruction 与 example，仅限 JSON
         # child_class = self._create_children_class()
@@ -432,24 +415,83 @@ class ActionNode:
         output_data_mapping: dict,
         images: Optional[Union[str, list[str]]] = None,
         system_msgs: Optional[list[str]] = None,
-        schema="markdown",  # compatible to original format
-        timeout=USE_CONFIG_TIMEOUT,
-    ) -> (str, BaseModel):
-        """Use ActionOutput to wrap the output of aask"""
+        schema="markdown",  # compatible to original
+        timeout=3,
+        ):
+        
+
+        # =============================================================
+        # 1. JSON 强制系统消息（即使 schema="markdown"，也不影响正常解析）
+        # =============================================================
+        json_force_sys = {
+            "role": "system",
+            "content": (
+                "You MUST respond ONLY with a valid JSON object.\n"
+                "NO markdown.\n"
+                "NO code fences.\n"
+                "NO explanation.\n"
+                "If unsure, respond with {}.\n"
+            )
+        }
+
+        # prepend the forced message
+        syslist = system_msgs or []
+        system_msgs = [json_force_sys] + syslist
+
+        # =============================================================
+        # 2. 调用 LLM（保持原逻辑）
+        # =============================================================
         content = await self.llm.aask(prompt, system_msgs, images=images, timeout=timeout)
         logger.debug(f"llm raw output:\n{content}")
+
+        # =============================================================
+        # 3. 清洗常见脏输出（Qwen 会输出这些）
+        # =============================================================
+        def clean_llm_output(text: str) -> str:
+            t = text.strip()
+
+            # 删除 ```json 开始
+            if t.startswith("```"):
+                t = t.split("```", 1)[-1]
+
+            # 删除末尾 ```
+            if "```" in t:
+                t = t.split("```")[0]
+
+            # 删除 "Sure, here is the JSON" 类废话
+            bad_prefixes = [
+                "Here is", "Sure", "当然", "好的", "以下是", "这是", "Here are",
+                "I will", "Let me", "As requested"
+            ]
+            for bp in bad_prefixes:
+                if t.startswith(bp):
+                    # 去掉第一句
+                    t = t.split("\n", 1)[-1].strip()
+                    break
+
+            return t.strip()
+
+        cleaned = clean_llm_output(content)
+
+        # =============================================================
+        # 4. 根据 schema 解析（保持原始 MetaGPT 行为）
+        # =============================================================
         output_class = self.create_model_class(output_class_name, output_data_mapping)
 
         if schema == "json":
             parsed_data = llm_output_postprocess(
-                output=content, schema=output_class.model_json_schema(), req_key=f"[/{TAG}]"
+                output=cleaned,
+                schema=output_class.model_json_schema(),
+                req_key=f"[/{TAG}]",
             )
-        else:  # using markdown parser
-            parsed_data = OutputParser.parse_data_with_mapping(content, output_data_mapping)
+        else:
+            parsed_data = OutputParser.parse_data_with_mapping(cleaned, output_data_mapping)
 
         logger.debug(f"parsed_data:\n{parsed_data}")
+
         instruct_content = output_class(**parsed_data)
         return content, instruct_content
+
 
     def get(self, key):
         return self.instruct_content.model_dump()[key]
@@ -465,10 +507,9 @@ class ActionNode:
     def set_context(self, context):
         self.set_recursive("context", context)
 
-    async def simple_fill(
-        self, schema, mode, images: Optional[Union[str, list[str]]] = None, timeout=USE_CONFIG_TIMEOUT, exclude=None
-    ):
+    async def simple_fill(self, schema, mode, images: Optional[Union[str, list[str]]] = None, timeout=3, exclude=None):
         prompt = self.compile(context=self.context, schema=schema, mode=mode, exclude=exclude)
+
         if schema != "raw":
             mapping = self.get_mapping(mode, exclude=exclude)
             class_name = f"{self.key}_AN"
@@ -483,133 +524,20 @@ class ActionNode:
 
         return self
 
-    def get_field_name(self):
-        """
-        Get the field name from the Pydantic model associated with this ActionNode.
-        """
-        model_class = self.create_class()
-        fields = model_class.model_fields
-
-        # Assuming there's only one field in the model
-        if len(fields) == 1:
-            return next(iter(fields))
-
-        # If there are multiple fields, we might want to use self.key to find the right one
-        return self.key
-
-    def get_field_names(self):
-        """
-        Get the field names associated with this ActionNode's Pydantic model.
-        """
-        model_class = self.create_class()
-        return model_class.model_fields.keys()
-
-    def get_field_types(self):
-        """
-        Get the field types associated with this ActionNode's Pydantic model.
-        """
-        model_class = self.create_class()
-        return {field_name: field.annotation for field_name, field in model_class.model_fields.items()}
-
-    def xml_compile(self, context):
-        """
-        Compile the prompt to make it easier for the model to understand the xml format.
-        """
-        field_names = self.get_field_names()
-        # Construct the example using the field names
-        examples = []
-        for field_name in field_names:
-            examples.append(f"<{field_name}>content</{field_name}>")
-
-        # Join all examples into a single string
-        example_str = "\n".join(examples)
-        # Add the example to the context
-        context += f"""
-### Response format (must be strictly followed): All content must be enclosed in the given XML tags, ensuring each opening <tag> has a corresponding closing </tag>, with no incomplete or self-closing tags allowed.\n
-{example_str}
-"""
-        return context
-
-    async def code_fill(
-        self, context: str, function_name: Optional[str] = None, timeout: int = USE_CONFIG_TIMEOUT
-    ) -> Dict[str, str]:
-        """
-        Fill CodeBlock Using ``` ```
-        """
-        field_name = self.get_field_name()
-        prompt = context
-        content = await self.llm.aask(prompt, timeout=timeout)
-        extracted_code = sanitize(code=content, entrypoint=function_name)
-        result = {field_name: extracted_code}
-        return result
-
-    async def single_fill(self, context: str, images: Optional[Union[str, list[str]]] = None) -> Dict[str, str]:
-        field_name = self.get_field_name()
-        prompt = context
-        content = await self.llm.aask(prompt, images=images)
-        result = {field_name: content}
-        return result
-
-    async def xml_fill(self, context: str, images: Optional[Union[str, list[str]]] = None) -> Dict[str, Any]:
-        """
-        Fill context with XML tags and convert according to field types, including string, integer, boolean, list and dict types
-        """
-        field_names = self.get_field_names()
-        field_types = self.get_field_types()
-
-        extracted_data: Dict[str, Any] = {}
-        content = await self.llm.aask(context, images=images)
-
-        for field_name in field_names:
-            pattern = rf"<{field_name}>(.*?)</{field_name}>"
-            match = re.search(pattern, content, re.DOTALL)
-            if match:
-                raw_value = match.group(1).strip()
-                field_type = field_types.get(field_name)
-
-                if field_type == str:
-                    extracted_data[field_name] = raw_value
-                elif field_type == int:
-                    try:
-                        extracted_data[field_name] = int(raw_value)
-                    except ValueError:
-                        extracted_data[field_name] = 0  # 或者其他默认值
-                elif field_type == bool:
-                    extracted_data[field_name] = raw_value.lower() in ("true", "yes", "1", "on", "True")
-                elif field_type == list:
-                    try:
-                        extracted_data[field_name] = eval(raw_value)
-                        if not isinstance(extracted_data[field_name], list):
-                            raise ValueError
-                    except:
-                        extracted_data[field_name] = []  # 默认空列表
-                elif field_type == dict:
-                    try:
-                        extracted_data[field_name] = eval(raw_value)
-                        if not isinstance(extracted_data[field_name], dict):
-                            raise ValueError
-                    except:
-                        extracted_data[field_name] = {}  # 默认空字典
-
-        return extracted_data
-
-    @exp_cache(serializer=ActionNodeSerializer())
     async def fill(
         self,
-        *,
-        req,
+        context,
         llm,
         schema="json",
         mode="auto",
         strgy="simple",
         images: Optional[Union[str, list[str]]] = None,
-        timeout=USE_CONFIG_TIMEOUT,
+        timeout=3,
         exclude=[],
-        function_name: str = None,
     ):
         """Fill the node(s) with mode.
 
-        :param req: Everything we should know when filling node.
+        :param context: Everything we should know when filling node.
         :param llm: Large Language Model with pre-defined system message.
         :param schema: json/markdown, determine example and output format.
          - raw: free form text
@@ -628,25 +556,9 @@ class ActionNode:
         :return: self
         """
         self.set_llm(llm)
-        self.set_context(req)
+        self.set_context(context)
         if self.schema:
             schema = self.schema
-
-        if mode == FillMode.CODE_FILL.value:
-            result = await self.code_fill(context, function_name, timeout)
-            self.instruct_content = self.create_class()(**result)
-            return self
-
-        elif mode == FillMode.XML_FILL.value:
-            context = self.xml_compile(context=self.context)
-            result = await self.xml_fill(context, images=images)
-            self.instruct_content = self.create_class()(**result)
-            return self
-
-        elif mode == FillMode.SINGLE_FILL.value:
-            result = await self.single_fill(context, images=images)
-            self.instruct_content = self.create_class()(**result)
-            return self
 
         if strgy == "simple":
             return await self.simple_fill(schema=schema, mode=mode, images=images, timeout=timeout, exclude=exclude)
@@ -865,12 +777,3 @@ class ActionNode:
             root_node.add_child(child_node)
 
         return root_node
-
-    @staticmethod
-    def is_optional_type(tp) -> bool:
-        """Return True if `tp` is `typing.Optional[...]`"""
-        if typing.get_origin(tp) is Union:
-            args = typing.get_args(tp)
-            non_none_types = [arg for arg in args if arg is not type(None)]
-            return len(non_none_types) == 1 and len(args) == 2
-        return False

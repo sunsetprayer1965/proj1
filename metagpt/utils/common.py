@@ -15,40 +15,29 @@ import ast
 import base64
 import contextlib
 import csv
-import functools
-import hashlib
 import importlib
 import inspect
 import json
-import mimetypes
 import os
 import platform
 import re
 import sys
-import time
 import traceback
-import uuid
-from asyncio import iscoroutinefunction
-from datetime import datetime
-from functools import partial
+import typing
 from io import BytesIO
 from pathlib import Path
-from typing import Any, Callable, Dict, List, Literal, Optional, Tuple, Union
-from urllib.parse import quote, unquote
+from typing import Any, Callable, List, Tuple, Union
 
 import aiofiles
-import aiohttp
-import chardet
 import loguru
 import requests
 from PIL import Image
 from pydantic_core import to_jsonable_python
 from tenacity import RetryCallState, RetryError, _utils
 
-from metagpt.const import MARKDOWN_TITLE_PREFIX, MESSAGE_ROUTE_TO_ALL
+from metagpt.const import MESSAGE_ROUTE_TO_ALL
 from metagpt.logs import logger
 from metagpt.utils.exceptions import handle_exception
-from metagpt.utils.json_to_markdown import json_to_markdown
 
 
 def check_cmd_exists(command) -> int:
@@ -74,7 +63,7 @@ class OutputParser:
     @classmethod
     def parse_blocks(cls, text: str):
         # 首先根据"##"将文本分割成不同的block
-        blocks = text.split(MARKDOWN_TITLE_PREFIX)
+        blocks = text.split("##")
 
         # 创建一个字典，用于存储每个block的标题和内容
         block_dict = {}
@@ -280,10 +269,10 @@ class CodeParser:
         return block_dict
 
     @classmethod
-    def parse_code(cls, text: str, lang: str = "", block: Optional[str] = None) -> str:
+    def parse_code(cls, block: str, text: str, lang: str = "") -> str:
         if block:
             text = cls.parse_block(block, text)
-        pattern = rf"```{lang}.*?\s+(.*?)\n```"
+        pattern = rf"```{lang}.*?\s+(.*?)```"
         match = re.search(pattern, text, re.DOTALL)
         if match:
             code = match.group(1)
@@ -296,7 +285,7 @@ class CodeParser:
 
     @classmethod
     def parse_str(cls, block: str, text: str, lang: str = ""):
-        code = cls.parse_code(block=block, text=text, lang=lang)
+        code = cls.parse_code(block, text, lang)
         code = code.split("=")[-1]
         code = code.strip().strip("'").strip('"')
         return code
@@ -304,7 +293,7 @@ class CodeParser:
     @classmethod
     def parse_file_list(cls, block: str, text: str, lang: str = "") -> list[str]:
         # Regular expression pattern to find the tasks list.
-        code = cls.parse_code(block=block, text=text, lang=lang)
+        code = cls.parse_code(block, text, lang)
         # print(code)
         pattern = r"\s*(.*=.*)?(\[.*\])"
 
@@ -372,6 +361,16 @@ def parse_recipient(text):
     return ""
 
 
+def create_func_call_config(func_schema: dict) -> dict:
+    """Create new function call config"""
+    tools = [{"type": "function", "function": func_schema}]
+    tool_choice = {"type": "function", "function": {"name": func_schema["name"]}}
+    return {
+        "tools": tools,
+        "tool_choice": tool_choice,
+    }
+
+
 def remove_comments(code_str: str) -> str:
     """Remove comments from code."""
     pattern = r"(\".*?\"|\'.*?\')|(\#.*?$)"
@@ -434,109 +433,23 @@ def is_send_to(message: "Message", addresses: set):
 def any_to_name(val):
     """
     Convert a value to its name by extracting the last part of the dotted path.
+
+    :param val: The value to convert.
+
+    :return: The name of the value.
     """
     return any_to_str(val).split(".")[-1]
 
 
-def concat_namespace(*args, delimiter: str = ":") -> str:
-    """Concatenate fields to create a unique namespace prefix.
-
-    Example:
-        >>> concat_namespace('prefix', 'field1', 'field2', delimiter=":")
-        'prefix:field1:field2'
-    """
-    return delimiter.join(str(value) for value in args)
+def concat_namespace(*args) -> str:
+    return ":".join(str(value) for value in args)
 
 
-def split_namespace(ns_class_name: str, delimiter: str = ":", maxsplit: int = 1) -> List[str]:
-    """Split a namespace-prefixed name into its namespace-prefix and name parts.
-
-    Example:
-        >>> split_namespace('prefix:classname')
-        ['prefix', 'classname']
-
-        >>> split_namespace('prefix:module:class', delimiter=":", maxsplit=2)
-        ['prefix', 'module', 'class']
-    """
-    return ns_class_name.split(delimiter, maxsplit=maxsplit)
+def split_namespace(ns_class_name: str) -> List[str]:
+    return ns_class_name.split(":")
 
 
-def auto_namespace(name: str, delimiter: str = ":") -> str:
-    """Automatically handle namespace-prefixed names.
-
-    If the input name is empty, returns a default namespace prefix and name.
-    If the input name is not namespace-prefixed, adds a default namespace prefix.
-    Otherwise, returns the input name unchanged.
-
-    Example:
-        >>> auto_namespace('classname')
-        '?:classname'
-
-        >>> auto_namespace('prefix:classname')
-        'prefix:classname'
-
-        >>> auto_namespace('')
-        '?:?'
-
-        >>> auto_namespace('?:custom')
-        '?:custom'
-    """
-    if not name:
-        return f"?{delimiter}?"
-    v = split_namespace(name, delimiter=delimiter)
-    if len(v) < 2:
-        return f"?{delimiter}{name}"
-    return name
-
-
-def add_affix(text: str, affix: Literal["brace", "url", "none"] = "brace"):
-    """Add affix to encapsulate data.
-
-    Example:
-        >>> add_affix("data", affix="brace")
-        '{data}'
-
-        >>> add_affix("example.com", affix="url")
-        '%7Bexample.com%7D'
-
-        >>> add_affix("text", affix="none")
-        'text'
-    """
-    mappings = {
-        "brace": lambda x: "{" + x + "}",
-        "url": lambda x: quote("{" + x + "}"),
-    }
-    encoder = mappings.get(affix, lambda x: x)
-    return encoder(text)
-
-
-def remove_affix(text, affix: Literal["brace", "url", "none"] = "brace"):
-    """Remove affix to extract encapsulated data.
-
-    Args:
-        text (str): The input text with affix to be removed.
-        affix (str, optional): The type of affix used. Defaults to "brace".
-            Supported affix types: "brace" for removing curly braces, "url" for URL decoding within curly braces.
-
-    Returns:
-        str: The text with affix removed.
-
-    Example:
-        >>> remove_affix('{data}', affix="brace")
-        'data'
-
-        >>> remove_affix('%7Bexample.com%7D', affix="url")
-        'example.com'
-
-        >>> remove_affix('text', affix="none")
-        'text'
-    """
-    mappings = {"brace": lambda x: x[1:-1], "url": lambda x: unquote(x)[1:-1]}
-    decoder = mappings.get(affix, lambda x: x)
-    return decoder(text)
-
-
-def general_after_log(i: "loguru.Logger", sec_format: str = "%0.3f") -> Callable[["RetryCallState"], None]:
+def general_after_log(i: "loguru.Logger", sec_format: str = "%0.3f") -> typing.Callable[["RetryCallState"], None]:
     """
     Generates a logging function to be used after a call is retried.
 
@@ -569,7 +482,7 @@ def general_after_log(i: "loguru.Logger", sec_format: str = "%0.3f") -> Callable
     return log_it
 
 
-def read_json_file(json_file: str, encoding: str = "utf-8") -> list[Any]:
+def read_json_file(json_file: str, encoding="utf-8") -> list[Any]:
     if not Path(json_file).exists():
         raise FileNotFoundError(f"json_file: {json_file} not exist, return []")
 
@@ -581,56 +494,13 @@ def read_json_file(json_file: str, encoding: str = "utf-8") -> list[Any]:
     return data
 
 
-def handle_unknown_serialization(x: Any) -> str:
-    """For `to_jsonable_python` debug, get more detail about the x."""
-
-    if inspect.ismethod(x):
-        tip = f"Cannot serialize method '{x.__func__.__name__}' of class '{x.__self__.__class__.__name__}'"
-    elif inspect.isfunction(x):
-        tip = f"Cannot serialize function '{x.__name__}'"
-    elif hasattr(x, "__class__"):
-        tip = f"Cannot serialize instance of '{x.__class__.__name__}'"
-    elif hasattr(x, "__name__"):
-        tip = f"Cannot serialize class or module '{x.__name__}'"
-    else:
-        tip = f"Cannot serialize object of type '{type(x).__name__}'"
-
-    raise TypeError(tip)
-
-
-def write_json_file(json_file: str, data: Any, encoding: str = "utf-8", indent: int = 4, use_fallback: bool = False):
+def write_json_file(json_file: str, data: list, encoding: str = None, indent: int = 4):
     folder_path = Path(json_file).parent
     if not folder_path.exists():
         folder_path.mkdir(parents=True, exist_ok=True)
 
-    custom_default = partial(to_jsonable_python, fallback=handle_unknown_serialization if use_fallback else None)
-
     with open(json_file, "w", encoding=encoding) as fout:
-        json.dump(data, fout, ensure_ascii=False, indent=indent, default=custom_default)
-
-
-def read_jsonl_file(jsonl_file: str, encoding="utf-8") -> list[dict]:
-    if not Path(jsonl_file).exists():
-        raise FileNotFoundError(f"json_file: {jsonl_file} not exist, return []")
-    datas = []
-    with open(jsonl_file, "r", encoding=encoding) as fin:
-        try:
-            for line in fin:
-                data = json.loads(line)
-                datas.append(data)
-        except Exception:
-            raise ValueError(f"read jsonl file: {jsonl_file} failed")
-    return datas
-
-
-def add_jsonl_file(jsonl_file: str, data: list[dict], encoding: str = None):
-    folder_path = Path(jsonl_file).parent
-    if not folder_path.exists():
-        folder_path.mkdir(parents=True, exist_ok=True)
-
-    with open(jsonl_file, "a", encoding=encoding) as fout:
-        for json_item in data:
-            fout.write(json.dumps(json_item) + "\n")
+        json.dump(data, fout, ensure_ascii=False, indent=indent, default=to_jsonable_python)
 
 
 def read_csv_to_list(curr_file: str, header=False, strip_trail=True):
@@ -698,7 +568,7 @@ def role_raise_decorator(func):
             raise Exception(format_trackback_info(limit=None))
         except Exception as e:
             if self.latest_observed_msg:
-                logger.exception(
+                logger.warning(
                     "There is a exception in role's execution, in order to resume, "
                     "we delete the newest role communication message in the role's memory."
                 )
@@ -711,29 +581,20 @@ def role_raise_decorator(func):
                 if re.match(r"^openai\.", name) or re.match(r"^httpx\.", name):
                     raise last_error
 
-            raise Exception(format_trackback_info(limit=None)) from e
+            raise Exception(format_trackback_info(limit=None))
 
     return wrapper
 
 
 @handle_exception
-async def aread(filename: str | Path, encoding="utf-8") -> str:
+async def aread(filename: str | Path, encoding=None) -> str:
     """Read file asynchronously."""
-    if not filename or not Path(filename).exists():
-        return ""
-    try:
-        async with aiofiles.open(str(filename), mode="r", encoding=encoding) as reader:
-            content = await reader.read()
-    except UnicodeDecodeError:
-        async with aiofiles.open(str(filename), mode="rb") as reader:
-            raw = await reader.read()
-            result = chardet.detect(raw)
-            detected_encoding = result["encoding"]
-            content = raw.decode(detected_encoding)
+    async with aiofiles.open(str(filename), mode="r", encoding=encoding) as reader:
+        content = await reader.read()
     return content
 
 
-async def awrite(filename: str | Path, data: str, encoding="utf-8"):
+async def awrite(filename: str | Path, data: str, encoding=None):
     """Write file asynchronously."""
     pathname = Path(filename)
     pathname.parent.mkdir(parents=True, exist_ok=True)
@@ -775,63 +636,12 @@ def list_files(root: str | Path) -> List[Path]:
     return files
 
 
-def parse_json_code_block(markdown_text: str) -> List[str]:
-    json_blocks = (
-        re.findall(r"```json(.*?)```", markdown_text, re.DOTALL) if "```json" in markdown_text else [markdown_text]
-    )
-
-    return [v.strip() for v in json_blocks]
-
-
-def remove_white_spaces(v: str) -> str:
-    return re.sub(r"(?<!['\"])\s|(?<=['\"])\s", "", v)
-
-
-async def aread_bin(filename: str | Path) -> bytes:
-    """Read binary file asynchronously.
-
-    Args:
-        filename (Union[str, Path]): The name or path of the file to be read.
-
-    Returns:
-        bytes: The content of the file as bytes.
-
-    Example:
-        >>> content = await aread_bin('example.txt')
-        b'This is the content of the file.'
-
-        >>> content = await aread_bin(Path('example.txt'))
-        b'This is the content of the file.'
-    """
-    async with aiofiles.open(str(filename), mode="rb") as reader:
-        content = await reader.read()
-    return content
-
-
-async def awrite_bin(filename: str | Path, data: bytes):
-    """Write binary file asynchronously.
-
-    Args:
-        filename (Union[str, Path]): The name or path of the file to be written.
-        data (bytes): The binary data to be written to the file.
-
-    Example:
-        >>> await awrite_bin('output.bin', b'This is binary data.')
-
-        >>> await awrite_bin(Path('output.bin'), b'Another set of binary data.')
-    """
-    pathname = Path(filename)
-    pathname.parent.mkdir(parents=True, exist_ok=True)
-    async with aiofiles.open(str(pathname), mode="wb") as writer:
-        await writer.write(data)
-
-
 def is_coroutine_func(func: Callable) -> bool:
     return inspect.iscoroutinefunction(func)
 
 
 def load_mc_skills_code(skill_names: list[str] = None, skills_dir: Path = None) -> list[str]:
-    """load minecraft skill from js files"""
+    """load mincraft skill from js files"""
     if not skills_dir:
         skills_dir = Path(__file__).parent.absolute()
     if skill_names is None:
@@ -840,15 +650,13 @@ def load_mc_skills_code(skill_names: list[str] = None, skills_dir: Path = None) 
     return skills
 
 
-def encode_image(image_path_or_pil: Union[Path, Image, str], encoding: str = "utf-8") -> str:
+def encode_image(image_path_or_pil: Union[Path, Image], encoding: str = "utf-8") -> str:
     """encode image from file or PIL.Image into base64"""
     if isinstance(image_path_or_pil, Image.Image):
         buffer = BytesIO()
         image_path_or_pil.save(buffer, format="JPEG")
         bytes_data = buffer.getvalue()
     else:
-        if isinstance(image_path_or_pil, str):
-            image_path_or_pil = Path(image_path_or_pil)
         if not image_path_or_pil.exists():
             raise FileNotFoundError(f"{image_path_or_pil} not exists")
         with open(str(image_path_or_pil), "rb") as image_file:
@@ -868,376 +676,3 @@ def decode_image(img_url_or_b64: str) -> Image:
         img_data = BytesIO(base64.b64decode(b64_data))
         img = Image.open(img_data)
     return img
-
-
-def extract_image_paths(content: str) -> bool:
-    # We require that the path must have a space preceding it, like "xxx /an/absolute/path.jpg xxx"
-    pattern = r"[^\s]+\.(?:png|jpe?g|gif|bmp|tiff|PNG|JPE?G|GIF|BMP|TIFF)"
-    image_paths = re.findall(pattern, content)
-    return image_paths
-
-
-def extract_and_encode_images(content: str) -> list[str]:
-    images = []
-    for path in extract_image_paths(content):
-        if os.path.exists(path):
-            images.append(encode_image(path))
-    return images
-
-
-def log_and_reraise(retry_state: RetryCallState):
-    logger.error(f"Retry attempts exhausted. Last exception: {retry_state.outcome.exception()}")
-    logger.warning(
-        """
-Recommend going to https://deepwisdom.feishu.cn/wiki/MsGnwQBjiif9c3koSJNcYaoSnu4#part-XdatdVlhEojeAfxaaEZcMV3ZniQ
-See FAQ 5.8
-"""
-    )
-    raise retry_state.outcome.exception()
-
-
-async def get_mime_type(filename: str | Path, force_read: bool = False) -> str:
-    guess_mime_type, _ = mimetypes.guess_type(filename.name)
-    if not guess_mime_type:
-        ext_mappings = {".yml": "text/yaml", ".yaml": "text/yaml"}
-        guess_mime_type = ext_mappings.get(filename.suffix)
-    if not force_read and guess_mime_type:
-        return guess_mime_type
-
-    from metagpt.tools.libs.shell import shell_execute  # avoid circular import
-
-    text_set = {
-        "application/json",
-        "application/vnd.chipnuts.karaoke-mmd",
-        "application/javascript",
-        "application/xml",
-        "application/x-sh",
-        "application/sql",
-        "text/yaml",
-    }
-
-    try:
-        stdout, stderr, _ = await shell_execute(f"file --mime-type '{str(filename)}'")
-        if stderr:
-            logger.debug(f"file:{filename}, error:{stderr}")
-            return guess_mime_type
-        ix = stdout.rfind(" ")
-        mime_type = stdout[ix:].strip()
-        if mime_type == "text/plain" and guess_mime_type in text_set:
-            return guess_mime_type
-        return mime_type
-    except Exception as e:
-        logger.debug(f"file:{filename}, error:{e}")
-        return "unknown"
-
-
-def get_markdown_codeblock_type(filename: str = None, mime_type: str = None) -> str:
-    """Return the markdown code-block type corresponding to the file extension."""
-    if not filename and not mime_type:
-        raise ValueError("Either filename or mime_type must be valid.")
-
-    if not mime_type:
-        mime_type, _ = mimetypes.guess_type(filename)
-    mappings = {
-        "text/x-shellscript": "bash",
-        "text/x-c++src": "cpp",
-        "text/css": "css",
-        "text/html": "html",
-        "text/x-java": "java",
-        "text/x-python": "python",
-        "text/x-ruby": "ruby",
-        "text/x-c": "cpp",
-        "text/yaml": "yaml",
-        "application/javascript": "javascript",
-        "application/json": "json",
-        "application/sql": "sql",
-        "application/vnd.chipnuts.karaoke-mmd": "mermaid",
-        "application/x-sh": "bash",
-        "application/xml": "xml",
-    }
-    return mappings.get(mime_type, "text")
-
-
-def get_project_srcs_path(workdir: str | Path) -> Path:
-    src_workdir_path = workdir / ".src_workspace"
-    if src_workdir_path.exists():
-        with open(src_workdir_path, "r") as file:
-            src_name = file.read()
-    else:
-        src_name = Path(workdir).name
-    return Path(workdir) / src_name
-
-
-async def init_python_folder(workdir: str | Path):
-    if not workdir:
-        return
-    workdir = Path(workdir)
-    if not workdir.exists():
-        return
-    init_filename = Path(workdir) / "__init__.py"
-    if init_filename.exists():
-        return
-    async with aiofiles.open(init_filename, "a"):
-        os.utime(init_filename, None)
-
-
-def get_markdown_code_block_type(filename: str) -> str:
-    if not filename:
-        return ""
-    ext = Path(filename).suffix
-    types = {
-        ".py": "python",
-        ".js": "javascript",
-        ".java": "java",
-        ".cpp": "cpp",
-        ".c": "c",
-        ".html": "html",
-        ".css": "css",
-        ".xml": "xml",
-        ".json": "json",
-        ".yaml": "yaml",
-        ".md": "markdown",
-        ".sql": "sql",
-        ".rb": "ruby",
-        ".php": "php",
-        ".sh": "bash",
-        ".swift": "swift",
-        ".go": "go",
-        ".rs": "rust",
-        ".pl": "perl",
-        ".asm": "assembly",
-        ".r": "r",
-        ".scss": "scss",
-        ".sass": "sass",
-        ".lua": "lua",
-        ".ts": "typescript",
-        ".tsx": "tsx",
-        ".jsx": "jsx",
-        ".yml": "yaml",
-        ".ini": "ini",
-        ".toml": "toml",
-        ".svg": "xml",  # SVG can often be treated as XML
-        # Add more file extensions and corresponding code block types as needed
-    }
-    return types.get(ext, "")
-
-
-def to_markdown_code_block(val: str, type_: str = "") -> str:
-    """
-    Convert a string to a Markdown code block.
-
-    This function takes a string and wraps it in a Markdown code block.
-    If a type is provided, it adds it as a language identifier for syntax highlighting.
-
-    Args:
-        val (str): The string to be converted to a Markdown code block.
-        type_ (str, optional): The language identifier for syntax highlighting.
-            Defaults to an empty string.
-
-    Returns:
-        str: The input string wrapped in a Markdown code block.
-            If the input string is empty, it returns an empty string.
-
-    Examples:
-        >>> to_markdown_code_block("print('Hello, World!')", "python")
-        \n```python\nprint('Hello, World!')\n```\n
-
-        >>> to_markdown_code_block("Some text")
-        \n```\nSome text\n```\n
-    """
-    if not val:
-        return val or ""
-    val = val.replace("```", "\\`\\`\\`")
-    return f"\n```{type_}\n{val}\n```\n"
-
-
-async def save_json_to_markdown(content: str, output_filename: str | Path):
-    """
-    Saves the provided JSON content as a Markdown file.
-
-    This function takes a JSON string, converts it to Markdown format,
-    and writes it to the specified output file.
-
-    Args:
-        content (str): The JSON content to be converted.
-        output_filename (str or Path): The path where the output Markdown file will be saved.
-
-    Returns:
-        None
-
-    Raises:
-        None: Any exceptions are logged and the function returns without raising them.
-
-    Examples:
-        >>> await save_json_to_markdown('{"key": "value"}', Path("/path/to/output.md"))
-        This will save the Markdown converted JSON to the specified file.
-
-    Notes:
-        - This function handles `json.JSONDecodeError` specifically for JSON parsing errors.
-        - Any other exceptions during the process are also logged and handled gracefully.
-    """
-    try:
-        m = json.loads(content)
-    except json.JSONDecodeError as e:
-        logger.warning(f"Failed to decode JSON content: {e}")
-        return
-    except Exception as e:
-        logger.warning(f"An unexpected error occurred: {e}")
-        return
-    await awrite(filename=output_filename, data=json_to_markdown(m))
-
-
-def tool2name(cls, methods: List[str], entry) -> Dict[str, Any]:
-    """
-    Generates a mapping of class methods to a given entry with class name as a prefix.
-
-    Args:
-        cls: The class from which the methods are derived.
-        methods (List[str]): A list of method names as strings.
-        entry (Any): The entry to be mapped to each method.
-
-    Returns:
-        Dict[str, Any]: A dictionary where keys are method names prefixed with the class name and
-                        values are the given entry. If the number of methods is less than 2,
-                        the dictionary will contain a single entry with the class name as the key.
-
-    Example:
-        >>> class MyClass:
-        >>>     pass
-        >>>
-        >>> tool2name(MyClass, ['method1', 'method2'], 'some_entry')
-        {'MyClass.method1': 'some_entry', 'MyClass.method2': 'some_entry'}
-
-        >>> tool2name(MyClass, ['method1'], 'some_entry')
-        {'MyClass': 'some_entry', 'MyClass.method1': 'some_entry'}
-    """
-    class_name = cls.__name__
-    mappings = {f"{class_name}.{i}": entry for i in methods}
-    if len(mappings) < 2:
-        mappings[class_name] = entry
-    return mappings
-
-
-def new_transaction_id(postfix_len=8) -> str:
-    """
-    Generates a new unique transaction ID based on current timestamp and a random UUID.
-
-    Args:
-        postfix_len (int): Length of the random UUID postfix to include in the transaction ID. Default is 8.
-
-    Returns:
-        str: A unique transaction ID composed of timestamp and a random UUID.
-    """
-    return datetime.now().strftime("%Y%m%d%H%M%ST") + uuid.uuid4().hex[0:postfix_len]
-
-
-def log_time(method):
-    """A time-consuming decorator for printing execution duration."""
-
-    def before_call():
-        start_time, cpu_start_time = time.perf_counter(), time.process_time()
-        logger.info(f"[{method.__name__}] started at: " f"{datetime.now().strftime('%Y-%m-%d %H:%m:%S')}")
-        return start_time, cpu_start_time
-
-    def after_call(start_time, cpu_start_time):
-        end_time, cpu_end_time = time.perf_counter(), time.process_time()
-        logger.info(
-            f"[{method.__name__}] ended. "
-            f"Time elapsed: {end_time - start_time:.4} sec, CPU elapsed: {cpu_end_time - cpu_start_time:.4} sec"
-        )
-
-    @functools.wraps(method)
-    def timeit_wrapper(*args, **kwargs):
-        start_time, cpu_start_time = before_call()
-        result = method(*args, **kwargs)
-        after_call(start_time, cpu_start_time)
-        return result
-
-    @functools.wraps(method)
-    async def timeit_wrapper_async(*args, **kwargs):
-        start_time, cpu_start_time = before_call()
-        result = await method(*args, **kwargs)
-        after_call(start_time, cpu_start_time)
-        return result
-
-    return timeit_wrapper_async if iscoroutinefunction(method) else timeit_wrapper
-
-
-async def check_http_endpoint(url: str, timeout: int = 3) -> bool:
-    """
-    Checks the status of an HTTP endpoint.
-
-    Args:
-        url (str): The URL of the HTTP endpoint to check.
-        timeout (int, optional): The timeout in seconds for the HTTP request. Defaults to 3.
-
-    Returns:
-        bool: True if the endpoint is online and responding with a 200 status code, False otherwise.
-    """
-    async with aiohttp.ClientSession() as session:
-        try:
-            async with session.get(url, timeout=timeout) as response:
-                return response.status == 200
-        except Exception as e:
-            print(f"Error accessing the endpoint {url}: {e}")
-            return False
-
-
-def rectify_pathname(path: Union[str, Path], default_filename: str) -> Path:
-    """
-    Rectifies the given path to ensure a valid output file path.
-
-    If the given `path` is a directory, it creates the directory (if it doesn't exist) and appends the `default_filename` to it. If the `path` is a file path, it creates the parent directory (if it doesn't exist) and returns the `path`.
-
-    Args:
-        path (Union[str, Path]): The input path, which can be a string or a `Path` object.
-        default_filename (str): The default filename to use if the `path` is a directory.
-
-    Returns:
-        Path: The rectified output path.
-    """
-    output_pathname = Path(path)
-    if output_pathname.is_dir():
-        output_pathname.mkdir(parents=True, exist_ok=True)
-        output_pathname = output_pathname / default_filename
-    else:
-        output_pathname.parent.mkdir(parents=True, exist_ok=True)
-    return output_pathname
-
-
-def generate_fingerprint(text: str) -> str:
-    """
-    Generate a fingerprint for the given text
-
-    Args:
-        text (str): The text for which the fingerprint needs to be generated
-
-    Returns:
-        str: The fingerprint value of the text
-    """
-    text_bytes = text.encode("utf-8")
-
-    # calculate SHA-256 hash
-    sha256 = hashlib.sha256()
-    sha256.update(text_bytes)
-    fingerprint = sha256.hexdigest()
-
-    return fingerprint
-
-
-def download_model(file_url: str, target_folder: Path) -> Path:
-    file_name = file_url.split("/")[-1]
-    file_path = target_folder.joinpath(f"{file_name}")
-    if not file_path.exists():
-        file_path.mkdir(parents=True, exist_ok=True)
-        try:
-            response = requests.get(file_url, stream=True)
-            response.raise_for_status()  # 检查请求是否成功
-            # 保存文件
-            with open(file_path, "wb") as f:
-                for chunk in response.iter_content(chunk_size=8192):
-                    f.write(chunk)
-                logger.info(f"权重文件已下载并保存至 {file_path}")
-        except requests.exceptions.HTTPError as err:
-            logger.info(f"权重文件下载过程中发生错误: {err}")
-    return file_path

@@ -6,33 +6,28 @@
 @File    : mmdc_pyppeteer.py
 """
 import os
-from typing import List, Optional
 from urllib.parse import urljoin
 
 from pyppeteer import launch
 
-from metagpt.config2 import Config
+from metagpt.config2 import config
 from metagpt.logs import logger
 
 
-async def mermaid_to_file(
-    mermaid_code, output_file_without_suffix, width=2048, height=2048, config=None, suffixes: Optional[List[str]] = None
-) -> int:
-    """Convert Mermaid code to various file formats.
+async def mermaid_to_file(mermaid_code, output_file_without_suffix, width=2048, height=2048) -> int:
+    """
+    Converts the given Mermaid code to various output formats and saves them to files.
 
     Args:
-        mermaid_code (str): The Mermaid code to be converted.
-        output_file_without_suffix (str): The output file name without the suffix.
-        width (int, optional): The width of the output image. Defaults to 2048.
-        height (int, optional): The height of the output image. Defaults to 2048.
-        config (Optional[Config], optional): The configuration to use for the conversion. Defaults to None, which uses the default configuration.
-        suffixes (Optional[List[str]], optional): The file suffixes to generate. Supports "png", "pdf", and "svg". Defaults to ["png"].
+        mermaid_code (str): The Mermaid code to convert.
+        output_file_without_suffix (str): The output file name without the file extension.
+        width (int, optional): The width of the output image in pixels. Defaults to 2048.
+        height (int, optional): The height of the output image in pixels. Defaults to 2048.
 
     Returns:
-        int: 0 if the conversion is successful, -1 if the conversion fails.
+        int: Returns 1 if the conversion and saving were successful, -1 otherwise.
     """
-    config = config if config else Config.default()
-    suffixes = suffixes or ["png"]
+    suffixes = ["png", "svg", "pdf"]
     __dirname = os.path.dirname(os.path.abspath(__file__))
 
     if config.mermaid.pyppeteer_path:
@@ -60,29 +55,29 @@ async def mermaid_to_file(
         await page.goto(mermaid_html_url)
 
         await page.querySelector("div#container")
-        mermaid_config = {}
+        # mermaid_config = {}
         background_color = "#ffffff"
-        my_css = ""
+        # my_css = ""
         await page.evaluate(f'document.body.style.background = "{background_color}";')
 
-        await page.evaluate(
-            """async ([definition, mermaidConfig, myCSS, backgroundColor]) => {
-            const { mermaid, zenuml } = globalThis;
-            await mermaid.registerExternalDiagrams([zenuml]);
-            mermaid.initialize({ startOnLoad: false, ...mermaidConfig });
-            const { svg } = await mermaid.render('my-svg', definition, document.getElementById('container'));
-            document.getElementById('container').innerHTML = svg;
-            const svgElement = document.querySelector('svg');
-            svgElement.style.backgroundColor = backgroundColor;
-        
-            if (myCSS) {
-                const style = document.createElementNS('http://www.w3.org/2000/svg', 'style');
-                style.appendChild(document.createTextNode(myCSS));
-                svgElement.appendChild(style);
-            }
-        }""",
-            [mermaid_code, mermaid_config, my_css, background_color],
-        )
+        # metadata = await page.evaluate(
+        #     """async ([definition, mermaidConfig, myCSS, backgroundColor]) => {
+        #     const { mermaid, zenuml } = globalThis;
+        #     await mermaid.registerExternalDiagrams([zenuml]);
+        #     mermaid.initialize({ startOnLoad: false, ...mermaidConfig });
+        #     const { svg } = await mermaid.render('my-svg', definition, document.getElementById('container'));
+        #     document.getElementById('container').innerHTML = svg;
+        #     const svgElement = document.querySelector('svg');
+        #     svgElement.style.backgroundColor = backgroundColor;
+        #
+        #     if (myCSS) {
+        #         const style = document.createElementNS('http://www.w3.org/2000/svg', 'style');
+        #         style.appendChild(document.createTextNode(myCSS));
+        #         svgElement.appendChild(style);
+        #     }
+        # }""",
+        #     [mermaid_code, mermaid_config, my_css, background_color],
+        # )
 
         if "svg" in suffixes:
             svg_xml = await page.evaluate(

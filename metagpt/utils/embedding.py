@@ -5,15 +5,12 @@
 @Author  : alexanderwu
 @File    : embedding.py
 """
-from llama_index.embeddings.openai import OpenAIEmbedding
+from langchain_community.embeddings import OpenAIEmbeddings
 
 from metagpt.config2 import config
 
 
-def get_embedding() -> OpenAIEmbedding:
+def get_embedding():
     llm = config.get_openai_llm()
-    if llm is None:
-        raise ValueError("To use OpenAIEmbedding, please ensure that config.llm.api_type is correctly set to 'openai'.")
-
-    embedding = OpenAIEmbedding(api_key=llm.api_key, api_base=llm.base_url)
+    embedding = OpenAIEmbeddings(openai_api_key=llm.api_key, openai_api_base=llm.base_url)
     return embedding

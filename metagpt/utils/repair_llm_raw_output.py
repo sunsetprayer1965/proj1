@@ -4,12 +4,12 @@
 
 import copy
 from enum import Enum
-from typing import Callable, Optional, Union
+from typing import Callable, Union
 
 import regex as re
 from tenacity import RetryCallState, retry, stop_after_attempt, wait_fixed
 
-from metagpt.config2 import Config
+from metagpt.config2 import config
 from metagpt.logs import logger
 from metagpt.utils.custom_decoder import CustomDecoder
 
@@ -119,7 +119,6 @@ def repair_json_format(output: str) -> str:
         logger.info(f"repair_json_format: {'}]'}")
     elif output.startswith("{") and output.endswith("]"):
         output = output[:-1] + "}"
-
     # remove comments in output json string, after json value content, maybe start with #, maybe start with //
     arr = output.split("\n")
     new_arr = []
@@ -154,9 +153,7 @@ def _repair_llm_raw_output(output: str, req_key: str, repair_type: RepairType = 
     return output
 
 
-def repair_llm_raw_output(
-    output: str, req_keys: list[str], repair_type: RepairType = None, config: Optional[Config] = None
-) -> str:
+def repair_llm_raw_output(output: str, req_keys: list[str], repair_type: RepairType = None) -> str:
     """
     in open-source llm model, it usually can't follow the instruction well, the output may be incomplete,
     so here we try to repair it and use all repair methods by default.
@@ -171,7 +168,6 @@ def repair_llm_raw_output(
             target: { xxx }
             output: { xxx }]
     """
-    config = config if config else Config.default()
     if not config.repair_llm_output:
         return output
 
@@ -212,17 +208,6 @@ def repair_invalid_json(output: str, error: str) -> str:
         elif (rline[col_no] in ["'", '"']) and (line.startswith('"') or line.startswith("'")) and "," not in line:
             # problem, `"""` or `'''` without `,`
             new_line = f",{line}"
-        elif col_no - 1 >= 0 and rline[col_no - 1] in ['"', "'"]:
-            # backslash problem like \" in the output
-            char = rline[col_no - 1]
-            nearest_char_idx = rline[col_no:].find(char)
-            new_line = (
-                rline[: col_no - 1]
-                + "\\"
-                + rline[col_no - 1 : col_no + nearest_char_idx]
-                + "\\"
-                + rline[col_no + nearest_char_idx :]
-            )
         elif '",' not in line and "," not in line and '"' not in line:
             new_line = f'{line}",'
         elif not line.endswith(","):
@@ -259,7 +244,6 @@ def run_after_exp_and_passon_next_retry(logger: "loguru.Logger") -> Callable[["R
                 "next_action":"None"
             }
         """
-        config = Config.default()
         if retry_state.outcome.failed:
             if retry_state.args:
                 # # can't be used as args=retry_state.args
@@ -280,12 +264,8 @@ def run_after_exp_and_passon_next_retry(logger: "loguru.Logger") -> Callable[["R
     return run_and_passon
 
 
-def repair_stop_after_attempt(retry_state):
-    return stop_after_attempt(3 if Config.default().repair_llm_output else 0)(retry_state)
-
-
 @retry(
-    stop=repair_stop_after_attempt,
+    stop=stop_after_attempt(3 if config.repair_llm_output else 0),
     wait=wait_fixed(1),
     after=run_after_exp_and_passon_next_retry(logger),
 )
@@ -348,51 +328,8 @@ def extract_state_value_from_output(content: str) -> str:
         content (str): llm's output from `Role._think`
     """
     content = content.strip()  # deal the output cases like " 0", "0\n" and so on.
-    pattern = (
-        r"(?<!-)[0-9]"  # TODO find the number using a more proper method not just extract from content using pattern
-    )
+    pattern = r"([0-9])"  # TODO find the number using a more proper method not just extract from content using pattern
     matches = re.findall(pattern, content, re.DOTALL)
     matches = list(set(matches))
     state = matches[0] if len(matches) > 0 else "-1"
     return state
-
-
-def repair_escape_error(commands):
-    """
-    Repaires escape errors in command responses.
-    When RoleZero parses a command, the command may contain unknown escape characters.
-
-    This function has two steps:
-    1. Transform unescaped substrings like "\d" and "\(" to "\\\\d" and "\\\\(".
-    2. Transform escaped characters like '\f' to substrings like "\\\\f".
-
-    Example:
-        When the original JSON string is " {"content":"\\\\( \\\\frac{1}{2} \\\\)"} ",
-        The "content" will be parsed correctly to "\( \frac{1}{2} \)".
-
-        However, if the original JSON string is " {"content":"\( \frac{1}{2} \)"}" directly.
-        It will cause a parsing error.
-
-        To repair the wrong JSON string, the following transformations will be used:
-        "\("   --->  "\\\\("
-        '\f'   --->  "\\\\f"
-        "\)"   --->  "\\\\)"
-
-    """
-    escape_repair_map = {
-        "\a": "\\\\a",
-        "\b": "\\\\b",
-        "\f": "\\\\f",
-        "\r": "\\\\r",
-        "\t": "\\\\t",
-        "\v": "\\\\v",
-    }
-    new_command = ""
-    for index, ch in enumerate(commands):
-        if ch == "\\" and index + 1 < len(commands):
-            if commands[index + 1] not in ["n", '"', " "]:
-                new_command += "\\"
-        elif ch in escape_repair_map:
-            ch = escape_repair_map[ch]
-        new_command += ch
-    return new_command

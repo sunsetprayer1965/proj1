@@ -21,15 +21,11 @@ class LLMProviderRegistry:
         return self.providers[enum]
 
 
-def register_provider(keys):
+def register_provider(key):
     """register provider to registry"""
 
     def decorator(cls):
-        if isinstance(keys, list):
-            for key in keys:
-                LLM_REGISTRY.register(key, cls)
-        else:
-            LLM_REGISTRY.register(keys, cls)
+        LLM_REGISTRY.register(key, cls)
         return cls
 
     return decorator
@@ -37,11 +33,16 @@ def register_provider(keys):
 
 def create_llm_instance(config: LLMConfig) -> BaseLLM:
     """get the default llm provider"""
-    llm = LLM_REGISTRY.get_provider(config.api_type)(config)
-    if llm.use_system_prompt and not config.use_system_prompt:
-        # for models like o1-series, default openai provider.use_system_prompt is True, but it should be False for o1-*
-        llm.use_system_prompt = config.use_system_prompt
-    return llm
+
+    # Lazy-load providers that are not imported elsewhere
+    from metagpt.configs.llm_config import LLMType as _LLMType
+
+    # 如果是 Ollama，但是还没注册，就强制 import 一次，
+    # 触发 @register_provider(LLMType.OLLAMA)
+    if config.api_type == _LLMType.OLLAMA and _LLMType.OLLAMA not in LLM_REGISTRY.providers:
+        from metagpt.provider import ollama_api  # noqa: F401
+
+    return LLM_REGISTRY.get_provider(config.api_type)(config)
 
 
 # Registry instance

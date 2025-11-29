@@ -19,11 +19,12 @@ from sklearn.preprocessing import KBinsDiscretizer, PolynomialFeatures
 
 from metagpt.tools.libs.data_preprocess import MLProcess
 from metagpt.tools.tool_registry import register_tool
+from metagpt.tools.tool_type import ToolType
 
-TAGS = ["feature engineering", "machine learning"]
+TOOL_TYPE = ToolType.FEATURE_ENGINEERING.type_name
 
 
-@register_tool(tags=TAGS)
+@register_tool(tool_type=TOOL_TYPE)
 class PolynomialExpansion(MLProcess):
     """
     Add polynomial and interaction features from selected numeric columns to input DataFrame.
@@ -66,7 +67,7 @@ class PolynomialExpansion(MLProcess):
         return new_df
 
 
-@register_tool(tags=TAGS)
+@register_tool(tool_type=TOOL_TYPE)
 class CatCount(MLProcess):
     """
     Add value counts of a categorical column as new feature.
@@ -91,7 +92,7 @@ class CatCount(MLProcess):
         return new_df
 
 
-@register_tool(tags=TAGS)
+@register_tool(tool_type=TOOL_TYPE)
 class TargetMeanEncoder(MLProcess):
     """
     Encode a categorical column by the mean of the label column, and adds the result as a new feature.
@@ -118,7 +119,7 @@ class TargetMeanEncoder(MLProcess):
         return new_df
 
 
-@register_tool(tags=TAGS)
+@register_tool(tool_type=TOOL_TYPE)
 class KFoldTargetMeanEncoder(MLProcess):
     """
     Add a new feature to the DataFrame by k-fold mean encoding of a categorical column using the label column.
@@ -158,7 +159,7 @@ class KFoldTargetMeanEncoder(MLProcess):
         return new_df
 
 
-@register_tool(tags=TAGS)
+@register_tool(tool_type=TOOL_TYPE)
 class CatCross(MLProcess):
     """
     Add pairwise crossed features and convert them to numerical features.
@@ -215,7 +216,7 @@ class CatCross(MLProcess):
         return new_df
 
 
-@register_tool(tags=TAGS)
+@register_tool(tool_type=TOOL_TYPE)
 class GroupStat(MLProcess):
     """
     Aggregate specified column in a DataFrame grouped by another column, adding new features named '<agg_col>_<agg_func>_by_<group_col>'.
@@ -247,7 +248,7 @@ class GroupStat(MLProcess):
         return new_df
 
 
-@register_tool(tags=TAGS)
+@register_tool(tool_type=TOOL_TYPE)
 class SplitBins(MLProcess):
     """
     Inplace binning of continuous data into intervals, returning integer-encoded bin identifiers directly.
@@ -275,7 +276,7 @@ class SplitBins(MLProcess):
         return new_df
 
 
-# @register_tool(tags=TAGS)
+# @register_tool(tool_type=TOOL_TYPE)
 class ExtractTimeComps(MLProcess):
     """
     Extract time components from a datetime column and add them as new features.
@@ -315,7 +316,7 @@ class ExtractTimeComps(MLProcess):
         return new_df
 
 
-@register_tool(tags=TAGS)
+@register_tool(tool_type=TOOL_TYPE)
 class GeneralSelection(MLProcess):
     """
     Drop all nan feats and feats with only one unique value.
@@ -348,7 +349,7 @@ class GeneralSelection(MLProcess):
 
 
 # skip for now because lgb is needed
-# @register_tool(tags=TAGS)
+# @register_tool(tool_type=TOOL_TYPE)
 class TreeBasedSelection(MLProcess):
     """
     Select features based on tree-based model and remove features with low importance.
@@ -402,7 +403,7 @@ class TreeBasedSelection(MLProcess):
         return new_df
 
 
-@register_tool(tags=TAGS)
+@register_tool(tool_type=TOOL_TYPE)
 class VarianceBasedSelection(MLProcess):
     """
     Select features based on variance and remove features with low variance.

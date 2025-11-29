@@ -11,13 +11,15 @@ from pathlib import Path
 from typing import Optional, Union
 
 import pandas as pd
-from llama_index.core import Document, SimpleDirectoryReader
-from llama_index.core.node_parser import SimpleNodeParser
-from llama_index.readers.file import PDFReader
+from langchain.document_loaders import (
+    TextLoader,
+    UnstructuredPDFLoader,
+    UnstructuredWordDocumentLoader,
+)
+from langchain.text_splitter import CharacterTextSplitter
 from pydantic import BaseModel, ConfigDict, Field
 from tqdm import tqdm
 
-from metagpt.logs import logger
 from metagpt.repo_parser import RepoParser
 
 
@@ -26,7 +28,7 @@ def validate_cols(content_col: str, df: pd.DataFrame):
         raise ValueError("Content column not found in DataFrame.")
 
 
-def read_data(data_path: Path) -> Union[pd.DataFrame, list[Document]]:
+def read_data(data_path: Path):
     suffix = data_path.suffix
     if ".xlsx" == suffix:
         data = pd.read_excel(data_path)
@@ -35,13 +37,14 @@ def read_data(data_path: Path) -> Union[pd.DataFrame, list[Document]]:
     elif ".json" == suffix:
         data = pd.read_json(data_path)
     elif suffix in (".docx", ".doc"):
-        data = SimpleDirectoryReader(input_files=[str(data_path)]).load_data()
+        data = UnstructuredWordDocumentLoader(str(data_path), mode="elements").load()
     elif ".txt" == suffix:
-        data = SimpleDirectoryReader(input_files=[str(data_path)]).load_data()
-        node_parser = SimpleNodeParser.from_defaults(separator="\n", chunk_size=256, chunk_overlap=0)
-        data = node_parser.get_nodes_from_documents(data)
+        data = TextLoader(str(data_path)).load()
+        text_splitter = CharacterTextSplitter(separator="\n", chunk_size=256, chunk_overlap=0)
+        texts = text_splitter.split_documents(data)
+        data = texts
     elif ".pdf" == suffix:
-        data = PDFReader.load_data(str(data_path))
+        data = UnstructuredPDFLoader(str(data_path), mode="elements").load()
     else:
         raise NotImplementedError("File format not supported.")
     return data
@@ -127,12 +130,9 @@ class IndexableDocument(Document):
         if isinstance(data, pd.DataFrame):
             validate_cols(content_col, data)
             return cls(data=data, content=str(data), content_col=content_col, meta_col=meta_col)
-        try:
+        else:
             content = data_path.read_text()
-        except Exception as e:
-            logger.debug(f"Load {str(data_path)} error: {e}")
-            content = ""
-        return cls(data=data, content=content, content_col=content_col, meta_col=meta_col)
+            return cls(data=data, content=content, content_col=content_col, meta_col=meta_col)
 
     def _get_docs_and_metadatas_by_df(self) -> (list, list):
         df = self.data
@@ -146,9 +146,9 @@ class IndexableDocument(Document):
                 metadatas.append({})
         return docs, metadatas
 
-    def _get_docs_and_metadatas_by_llamaindex(self) -> (list, list):
+    def _get_docs_and_metadatas_by_langchain(self) -> (list, list):
         data = self.data
-        docs = [i.text for i in data]
+        docs = [i.page_content for i in data]
         metadatas = [i.metadata for i in data]
         return docs, metadatas
 
@@ -156,7 +156,7 @@ class IndexableDocument(Document):
         if isinstance(self.data, pd.DataFrame):
             return self._get_docs_and_metadatas_by_df()
         elif isinstance(self.data, list):
-            return self._get_docs_and_metadatas_by_llamaindex()
+            return self._get_docs_and_metadatas_by_langchain()
         else:
             raise NotImplementedError("Data type not supported for metadata extraction.")
 

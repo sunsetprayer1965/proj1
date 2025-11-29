@@ -54,16 +54,14 @@ class SeleniumWrapper(BaseModel):
     def executable_path(self):
         return self.launch_kwargs.get("executable_path")
 
-    async def run(self, url: str, *urls: str, per_page_timeout: float = None) -> WebPage | list[WebPage]:
+    async def run(self, url: str, *urls: str) -> WebPage | list[WebPage]:
         await self._run_precheck()
 
-        _scrape = lambda url, per_page_timeout: self.loop.run_in_executor(
-            self.executor, self._scrape_website, url, per_page_timeout
-        )
+        _scrape = lambda url: self.loop.run_in_executor(self.executor, self._scrape_website, url)
 
         if urls:
-            return await asyncio.gather(_scrape(url, per_page_timeout), *(_scrape(i, per_page_timeout) for i in urls))
-        return await _scrape(url, per_page_timeout)
+            return await asyncio.gather(_scrape(url), *(_scrape(i) for i in urls))
+        return await _scrape(url)
 
     async def _run_precheck(self):
         if self._has_run_precheck:
@@ -77,11 +75,11 @@ class SeleniumWrapper(BaseModel):
         )
         self._has_run_precheck = True
 
-    def _scrape_website(self, url, timeout: float = None):
+    def _scrape_website(self, url):
         with self._get_driver() as driver:
             try:
                 driver.get(url)
-                WebDriverWait(driver, timeout or 30).until(EC.presence_of_element_located((By.TAG_NAME, "body")))
+                WebDriverWait(driver, 30).until(EC.presence_of_element_located((By.TAG_NAME, "body")))
                 inner_text = driver.execute_script("return document.body.innerText;")
                 html = driver.page_source
             except Exception as e:
@@ -105,7 +103,7 @@ class WDMHttpProxyClient(WDMHttpClient):
 
     def get(self, url, **kwargs):
         if "proxies" not in kwargs and self.proxy:
-            kwargs["proxies"] = {"all": self.proxy}
+            kwargs["proxies"] = {"all_proxy": self.proxy}
         return super().get(url, **kwargs)
 
 

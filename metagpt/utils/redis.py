@@ -10,7 +10,7 @@ from __future__ import annotations
 import traceback
 from datetime import timedelta
 
-import redis.asyncio as aioredis
+import aioredis  # https://aioredis.readthedocs.io/en/latest/getting-started/
 
 from metagpt.configs.redis_config import RedisConfig
 from metagpt.logs import logger

@@ -5,46 +5,31 @@
 @Author  : mannaandpoem
 @File    : write_code_plan_and_change_an.py
 """
-from typing import List, Optional
+import os
 
-from pydantic import BaseModel, Field
+from pydantic import Field
 
 from metagpt.actions.action import Action
 from metagpt.actions.action_node import ActionNode
-from metagpt.logs import logger
-from metagpt.schema import CodePlanAndChangeContext, Document
-from metagpt.utils.common import get_markdown_code_block_type
-from metagpt.utils.project_repo import ProjectRepo
+from metagpt.schema import CodePlanAndChangeContext
 
-DEVELOPMENT_PLAN = ActionNode(
-    key="Development Plan",
-    expected_type=List[str],
-    instruction="Develop a comprehensive and step-by-step incremental development plan, providing the detail "
-    "changes to be implemented at each step based on the order of 'Task List'",
-    example=[
-        "Enhance the functionality of `calculator.py` by extending it to incorporate methods for subtraction, ...",
-        "Update the existing codebase in main.py to incorporate new API endpoints for subtraction, ...",
-    ],
-)
-
-INCREMENTAL_CHANGE = ActionNode(
-    key="Incremental Change",
-    expected_type=List[str],
-    instruction="Write Incremental Change by making a code draft that how to implement incremental development "
-    "including detailed steps based on the context. Note: Track incremental changes using the marks `+` and `-` to "
-    "indicate additions and deletions, and ensure compliance with the output format of `git diff`",
-    example=[
-        '''```diff
---- Old/calculator.py
-+++ New/calculator.py
-
+CODE_PLAN_AND_CHANGE = ActionNode(
+    key="Code Plan And Change",
+    expected_type=str,
+    instruction="Developing comprehensive and step-by-step incremental development plan, and write Incremental "
+    "Change by making a code draft that how to implement incremental development including detailed steps based on the "
+    "context. Note: Track incremental changes using mark of '+' or '-' for add/modify/delete code, and conforms to the "
+    "output format of git diff",
+    example="""
+1. Plan for calculator.py: Enhance the functionality of `calculator.py` by extending it to incorporate methods for subtraction, multiplication, and division. Additionally, implement robust error handling for the division operation to mitigate potential issues related to division by zero. 
+```python
 class Calculator:
          self.result = number1 + number2
          return self.result
 
 -    def sub(self, number1, number2) -> float:
 +    def subtract(self, number1: float, number2: float) -> float:
-+        """
++        '''
 +        Subtracts the second number from the first and returns the result.
 +
 +        Args:
@@ -53,13 +38,13 @@ class Calculator:
 +
 +        Returns:
 +            float: The difference of number1 and number2.
-+        """
++        '''
 +        self.result = number1 - number2
 +        return self.result
 +
     def multiply(self, number1: float, number2: float) -> float:
 -        pass
-+        """
++        '''
 +        Multiplies two numbers and returns the result.
 +
 +        Args:
@@ -68,15 +53,15 @@ class Calculator:
 +
 +        Returns:
 +            float: The product of number1 and number2.
-+        """
++        '''
 +        self.result = number1 * number2
 +        return self.result
 +
     def divide(self, number1: float, number2: float) -> float:
 -        pass
-+        """
++        '''
 +            ValueError: If the second number is zero.
-+        """
++        '''
 +        if number2 == 0:
 +            raise ValueError('Cannot divide by zero')
 +        self.result = number1 / number2
@@ -90,11 +75,10 @@ class Calculator:
 +            print("Result is already zero, no need to clear.")
 +
          self.result = 0.0
-```''',
-        """```diff
---- Old/main.py
-+++ New/main.py
+```
 
+2. Plan for main.py: Integrate new API endpoints for subtraction, multiplication, and division into the existing codebase of `main.py`. Then, ensure seamless integration with the overall application architecture and maintain consistency with coding standards.
+```python
 def add_numbers():
      result = calculator.add_numbers(num1, num2)
      return jsonify({'result': result}), 200
@@ -122,15 +106,11 @@ def add_numbers():
  if __name__ == '__main__':
      app.run()
 ```""",
-    ],
 )
 
 CODE_PLAN_AND_CHANGE_CONTEXT = """
 ## User New Requirements
 {requirement}
-
-## Issue
-{issue}
 
 ## PRD
 {prd}
@@ -163,8 +143,9 @@ Role: You are a professional engineer; The main goal is to complete incremental 
 {task}
 
 ## Legacy Code
+```Code
 {code}
-
+```
 
 ## Debug logs
 ```text
@@ -179,14 +160,9 @@ Role: You are a professional engineer; The main goal is to complete incremental 
 ```
 
 # Format example
-## Code: {demo_filename}.py
+## Code: {filename}
 ```python
-## {demo_filename}.py
-...
-```
-## Code: {demo_filename}.js
-```javascript
-// {demo_filename}.js
+## {filename}
 ...
 ```
 
@@ -196,45 +172,39 @@ Role: You are a professional engineer; The main goal is to complete incremental 
 2. COMPLETE CODE: Your code will be part of the entire project, so please implement complete, reliable, reusable code snippets.
 3. Set default value: If there is any setting, ALWAYS SET A DEFAULT VALUE, ALWAYS USE STRONG TYPE AND EXPLICIT VARIABLE. AVOID circular import.
 4. Follow design: YOU MUST FOLLOW "Data structures and interfaces". DONT CHANGE ANY DESIGN. Do not use public member functions that do not exist in your design.
-5. Follow Code Plan And Change: If there is any "Incremental Change" that is marked by the git diff format with '+' and '-' symbols, or Legacy Code files contain "{filename} to be rewritten", you must merge it into the code file according to the "Development Plan". 
+5. Follow Code Plan And Change: If there is any Incremental Change that is marked by the git diff format using '+' and '-' for add/modify/delete code, or Legacy Code files contain "{filename} to be rewritten", you must merge it into the code file according to the plan. 
 6. CAREFULLY CHECK THAT YOU DONT MISS ANY NECESSARY CLASS/FUNCTION IN THIS FILE.
 7. Before using a external variable/module, make sure you import it first.
 8. Write out EVERY CODE DETAIL, DON'T LEAVE TODO.
 9. Attention: Retain details that are not related to incremental development but are important for maintaining the consistency and clarity of the old code.
 """
 
-CODE_PLAN_AND_CHANGE = [DEVELOPMENT_PLAN, INCREMENTAL_CHANGE]
-
-WRITE_CODE_PLAN_AND_CHANGE_NODE = ActionNode.from_children("WriteCodePlanAndChange", CODE_PLAN_AND_CHANGE)
+WRITE_CODE_PLAN_AND_CHANGE_NODE = ActionNode.from_children("WriteCodePlanAndChange", [CODE_PLAN_AND_CHANGE])
 
 
 class WriteCodePlanAndChange(Action):
     name: str = "WriteCodePlanAndChange"
     i_context: CodePlanAndChangeContext = Field(default_factory=CodePlanAndChangeContext)
-    repo: Optional[ProjectRepo] = Field(default=None, exclude=True)
-    input_args: Optional[BaseModel] = Field(default=None, exclude=True)
 
     async def run(self, *args, **kwargs):
         self.llm.system_prompt = "You are a professional software engineer, your primary responsibility is to "
         "meticulously craft comprehensive incremental development plan and deliver detailed incremental change"
-        prd_doc = await Document.load(filename=self.i_context.prd_filename)
-        design_doc = await Document.load(filename=self.i_context.design_filename)
-        task_doc = await Document.load(filename=self.i_context.task_filename)
+        prd_doc = await self.repo.docs.prd.get(filename=self.i_context.prd_filename)
+        design_doc = await self.repo.docs.system_design.get(filename=self.i_context.design_filename)
+        task_doc = await self.repo.docs.task.get(filename=self.i_context.task_filename)
+        code_text = await self.get_old_codes()
         context = CODE_PLAN_AND_CHANGE_CONTEXT.format(
-            requirement=f"```text\n{self.i_context.requirement}\n```",
-            issue=f"```text\n{self.i_context.issue}\n```",
+            requirement=self.i_context.requirement,
             prd=prd_doc.content,
             design=design_doc.content,
             task=task_doc.content,
-            code=await self.get_old_codes(),
+            code=code_text,
         )
-        logger.info("Writing code plan and change..")
-        return await WRITE_CODE_PLAN_AND_CHANGE_NODE.fill(req=context, llm=self.llm, schema="json")
+        return await WRITE_CODE_PLAN_AND_CHANGE_NODE.fill(context=context, llm=self.llm, schema="json")
 
     async def get_old_codes(self) -> str:
-        old_codes = await self.repo.srcs.get_all()
-        codes = [
-            f"### File Name: `{code.filename}`\n```{get_markdown_code_block_type(code.filename)}\n{code.content}```\n"
-            for code in old_codes
-        ]
+        self.repo.old_workspace = self.repo.git_repo.workdir / os.path.basename(self.config.project_path)
+        old_file_repo = self.repo.git_repo.new_file_repository(relative_path=self.repo.old_workspace)
+        old_codes = await old_file_repo.get_all()
+        codes = [f"----- {code.filename}\n```{code.content}```" for code in old_codes]
         return "\n".join(codes)

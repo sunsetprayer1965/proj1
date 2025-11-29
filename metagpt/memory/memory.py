@@ -7,14 +7,13 @@
 @Modified By: mashenquan, 2023-11-1. According to RFC 116: Updated the type of index key.
 """
 from collections import defaultdict
-from typing import DefaultDict, Iterable, Optional, Set
+from typing import DefaultDict, Iterable, Set
 
 from pydantic import BaseModel, Field, SerializeAsAny
 
 from metagpt.const import IGNORED_MESSAGE_ID
 from metagpt.schema import Message
 from metagpt.utils.common import any_to_str, any_to_str_set
-from metagpt.utils.exceptions import handle_exception
 
 
 class Memory(BaseModel):
@@ -82,7 +81,7 @@ class Memory(BaseModel):
         return self.storage[-k:]
 
     def find_news(self, observed: list[Message], k=0) -> list[Message]:
-        """find news (previously unseen messages) from the most recent k memories, from all memories when k=0"""
+        """find news (previously unseen messages) from the the most recent k memories, from all memories when k=0"""
         already_observed = self.get(k)
         news: list[Message] = []
         for i in observed:
@@ -105,8 +104,3 @@ class Memory(BaseModel):
                 continue
             rsp += self.index[action]
         return rsp
-
-    @handle_exception
-    def get_by_position(self, position: int) -> Optional[Message]:
-        """Returns the message at the given position if valid, otherwise returns None"""
-        return self.storage[position]

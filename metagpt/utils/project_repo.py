@@ -10,7 +10,6 @@
 from __future__ import annotations
 
 from pathlib import Path
-from typing import Optional
 
 from metagpt.const import (
     CLASS_VIEW_FILE_REPO,
@@ -34,9 +33,7 @@ from metagpt.const import (
     TASK_PDF_FILE_REPO,
     TEST_CODES_FILE_REPO,
     TEST_OUTPUTS_FILE_REPO,
-    VISUAL_GRAPH_REPO_FILE_REPO,
 )
-from metagpt.utils.common import get_project_srcs_path
 from metagpt.utils.file_repository import FileRepository
 from metagpt.utils.git_repository import GitRepository
 
@@ -72,7 +69,6 @@ class ResourceFileRepositories(FileRepository):
     code_summary: FileRepository
     sd_output: FileRepository
     code_plan_and_change: FileRepository
-    graph_repo: FileRepository
 
     def __init__(self, git_repo):
         super().__init__(git_repo=git_repo, relative_path=RESOURCES_FILE_REPO)
@@ -86,7 +82,6 @@ class ResourceFileRepositories(FileRepository):
         self.code_summary = git_repo.new_file_repository(relative_path=CODE_SUMMARIES_PDF_FILE_REPO)
         self.sd_output = git_repo.new_file_repository(relative_path=SD_OUTPUT_FILE_REPO)
         self.code_plan_and_change = git_repo.new_file_repository(relative_path=CODE_PLAN_AND_CHANGE_PDF_FILE_REPO)
-        self.graph_repo = git_repo.new_file_repository(relative_path=VISUAL_GRAPH_REPO_FILE_REPO)
 
 
 class ProjectRepo(FileRepository):
@@ -131,33 +126,21 @@ class ProjectRepo(FileRepository):
         return self._git_repo.new_file_repository(self._srcs_path)
 
     def code_files_exists(self) -> bool:
-        src_workdir = get_project_srcs_path(self.git_repo.workdir)
+        git_workdir = self.git_repo.workdir
+        src_workdir = git_workdir / git_workdir.name
         if not src_workdir.exists():
             return False
-        code_files = self.with_src_path(path=src_workdir).srcs.all_files
+        code_files = self.with_src_path(path=git_workdir / git_workdir.name).srcs.all_files
         if not code_files:
             return False
-        return bool(code_files)
 
     def with_src_path(self, path: str | Path) -> ProjectRepo:
-        path = Path(path)
-        if path.is_relative_to(self.workdir):
-            self._srcs_path = path.relative_to(self.workdir)
-        else:
-            self._srcs_path = path
+        try:
+            self._srcs_path = Path(path).relative_to(self.workdir)
+        except ValueError:
+            self._srcs_path = Path(path)
         return self
 
     @property
     def src_relative_path(self) -> Path | None:
         return self._srcs_path
-
-    @staticmethod
-    def search_project_path(filename: str | Path) -> Optional[Path]:
-        root = Path(filename).parent if Path(filename).is_file() else Path(filename)
-        root = root.resolve()
-        while str(root) != "/":
-            git_repo = root / ".git"
-            if git_repo.exists():
-                return root
-            root = root.parent
-        return None

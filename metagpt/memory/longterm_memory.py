@@ -29,14 +29,16 @@ class LongTermMemory(Memory):
     msg_from_recover: bool = False
 
     def recover_memory(self, role_id: str, rc: RoleContext):
-        self.memory_storage.recover_memory(role_id)
+        messages = self.memory_storage.recover_memory(role_id)
         self.rc = rc
         if not self.memory_storage.is_initialized:
-            logger.warning(f"It may the first time to run Role {role_id}, the long-term memory is empty")
+            logger.warning(f"It may the first time to run Agent {role_id}, the long-term memory is empty")
         else:
-            logger.warning(f"Role {role_id} has existing memory storage and has recovered them.")
+            logger.warning(
+                f"Agent {role_id} has existing memory storage with {len(messages)} messages " f"and has recovered them."
+            )
         self.msg_from_recover = True
-        # self.add_batch(messages) # TODO no need
+        self.add_batch(messages)
         self.msg_from_recover = False
 
     def add(self, message: Message):
@@ -47,7 +49,7 @@ class LongTermMemory(Memory):
                 # and ignore adding messages from recover repeatedly
                 self.memory_storage.add(message)
 
-    async def find_news(self, observed: list[Message], k=0) -> list[Message]:
+    def find_news(self, observed: list[Message], k=0) -> list[Message]:
         """
         find news (previously unseen messages) from the the most recent k memories, from all memories when k=0
             1. find the short-term memory(stm) news
@@ -61,13 +63,10 @@ class LongTermMemory(Memory):
         ltm_news: list[Message] = []
         for mem in stm_news:
             # filter out messages similar to those seen previously in ltm, only keep fresh news
-            mem_searched = await self.memory_storage.search_similar(mem)
-            if len(mem_searched) == 0:
+            mem_searched = self.memory_storage.search_dissimilar(mem)
+            if len(mem_searched) > 0:
                 ltm_news.append(mem)
         return ltm_news[-k:]
-
-    def persist(self):
-        self.memory_storage.persist()
 
     def delete(self, message: Message):
         super().delete(message)
