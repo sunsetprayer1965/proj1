@@ -1,0 +1,31 @@
+--- Security: Never commit keys ---
+
+config.yaml
+config2.yaml
+key.yaml
+.env
+*.key
+
+--- Runtime data: Don't commit logs and temporary workspaces ---
+
+logs/
+workspace/
+metagpt/workspace/
+.log
+trace_.json
+
+--- Python temporary files ---
+
+pycache/
+*.pyc
+*.pyo
+build/
+dist/
+*.egg-info/
+.pytest_cache/
+
+--- Environment ---
+
+venv/
+.vscode/
+.idea/
