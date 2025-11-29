@@ -1,197 +1,168 @@
-# **MASWE: Multi-Agent Software Engineering System**
+# MASWE: Multi-Agent Software Engineering System
 
-**MASWE** (Multi-Agent Software Engineering) is a research-oriented orchestration framework designed to simulate a complete software development lifecycle using autonomous LLM agents.
+MASWE (Multi-Agent Software Engineering) is a research-oriented orchestration framework designed to simulate a complete software development lifecycle using autonomous LLM agents. It investigates whether structured collaboration among lightweight local LLMs (e.g., Qwen, DeepSeek) can approach the software engineering capabilities of large cloud models like GPT‑4 and Claude.
 
-The core research question behind MASWE is: **Can structured collaboration among lightweight local LLMs (e.g., Qwen, DeepSeek) approach the software engineering performance of massive cloud models (GPT-4, Claude 3.5)?**
+## Table of Contents
 
-## **📑 Table of Contents**
+- Overview
+- Architecture
+- System Components
+- Key Features
+- Workflow Pipeline
+- Installation & Usage
+- Evaluation & Benchmarks
+- Project Structure
+- Contributing
+- License
 
-* [Overview](https://www.google.com/search?q=%23-overview)  
-* [Architecture](https://www.google.com/search?q=%23-architecture)  
-* [System Components](https://www.google.com/search?q=%23-system-components)  
-* [Key Features](https://www.google.com/search?q=%23-key-features)  
-* [Workflow Pipeline](https://www.google.com/search?q=%23-workflow-pipeline)  
-* [Installation & Usage](https://www.google.com/search?q=%23-installation--usage)  
-* [Evaluation & Benchmarks](https://www.google.com/search?q=%23-evaluation--benchmarks)  
-* [Project Structure](https://www.google.com/search?q=%23-project-structure)  
-* [Contributing](https://www.google.com/search?q=%23-contributing)
+## Overview
 
-## **🌟 Overview**
+MASWE runs inside a fully reproducible Docker environment and orchestrates a team of specialized agents—Product Manager, Architect, Developer, Reviewer—to convert natural language requirements into fully tested, executable software artifacts.
 
-MASWE simulates a miniature software development company within a deterministic, Dockerized environment. It orchestrates a team of specialized agents—Product Manager, Architect, Developer, Reviewer—to convert natural language requirements into fully tested, executable code.
+A core design advantage is its unified LLM Backend Layer, enabling seamless switching between local inference (Qwen, DeepSeek, Llama 3) and cloud inference (GPT‑4, Claude, Gemini).
 
-Unlike standard agent frameworks, MASWE abstracts the **LLM Backend Layer**, allowing seamless switching between:
+## Architecture
 
-* **Local Inference:** Ollama (Qwen2.5-Coder, DeepSeek-Coder, Llama 3\)  
-* **Cloud Inference:** OpenAI (GPT-4), Anthropic (Claude), Google (Gemini)
+MASWE implements a directed workflow where artifacts flow between agents in a structured cycle.
 
-## **🧱 Architecture**
-
-The system utilizes a directed cyclic graph approach where artifacts (documents, code) are passed and refined between agents.
-
-flowchart TD  
-    subgraph Input  
-    A\[User Prompt / Issue\]  
+```mermaid
+flowchart TD
+    subgraph Input
+        A[User Prompt / Issue]
     end
 
-    subgraph "Planning Phase"  
-    B\[Product Manager\] \--\>|PRD & Specs| C\[System Architect\]  
-    C \--\>|Design Docs & API| D\[Developer Agent\]  
+    subgraph "Planning Phase"
+        B[Product Manager] -->|PRD & Specs| C[System Architect]
+        C -->|Design Docs & API| D[Developer Agent]
     end
 
-    subgraph "Development Loop"  
-    D \--\>|Pull Request| E\[Reviewer / QA\]  
-    E \--\>|Reject \+ Feedback| D  
-    E \--\>|Approve| F\[Integration Pipeline\]  
+    subgraph "Development Loop"
+        D -->|Pull Request| E[Reviewer / QA]
+        E -->|Reject + Feedback| D
+        E -->|Approve| F[Integration Pipeline]
     end
 
-    subgraph "Deployment & Eval"  
-    F \--\> G\[CI/CD & Packaging\]  
-    F \--\> H\[Evaluation (HumanEval/SWE-Bench)\]  
+    subgraph "Deployment & Eval"
+        F --> G[CI/CD & Packaging]
+        F --> H[Evaluation (HumanEval/SWE-Bench)]
     end
 
-    A \--\> B
+    A --> B
+```
 
-## **🧩 System Components**
+## System Components
 
 | Role | Responsibility | Output |
-| :---- | :---- | :---- |
-| **Product Manager** | Requirements engineering, competitive analysis, user stories. | PRD.md, requirements.txt |
-| **System Architect** | High-level system design, data structures, file paths, API definition. | design.md, class\_diagram.mmd |
-| **Developer** | Implementation of logic based on Architect's specs. | Source Code (.py, .js, etc.) |
-| **Reviewer / QA** | Static analysis, logic verification, compliance check against PRD. | Code Review Report, Feedback Loop |
-| **Orchestrator** | Message passing, state management, container lifecycle. | workflow\_trace.json |
+|------|---------------|--------|
+| Product Manager | Requirements engineering, user stories | PRD.md, requirements.txt |
+| System Architect | System design, data structures, API | design.md, diagrams |
+| Developer | Code implementation based on architect specs | Source code |
+| Reviewer / QA | Static analysis, testing | Review report |
+| Orchestrator | Agent routing, project state management | workflow_trace.json |
 
-## **🔥 Key Features**
+## Key Features
 
-### **1\. Hybrid LLM Backend**
+### 1. Hybrid Local/Cloud LLM Backend
+- Optimized for Qwen2.5-Coder and DeepSeek-Coder locally
+- Seamless switching to GPT‑4 or Claude
+- Unified LLMClient for temperature, context window, and token usage
 
-* **Local-First:** Optimized for Qwen2.5-Coder-7B and DeepSeek via Ollama for zero-cost development.  
-* **Cloud-Ready:** Plug-and-play adapters for GPT-4o and Claude Sonnet when higher reasoning capabilities are required.  
-* **Unified API:** A single LLMClient interface handles temperature, context window management, and token usage tracking across all providers.
+### 2. MetaGPT‑Style Orchestration
+- Role–Action–Memory pattern
+- Individual agent memory + global project state
+- Asynchronous execution pipeline
 
-### **2\. MetaGPT-Style Orchestration**
+### 3. Fully Reproducible Environments
+- Complete Dockerization
+- Volume-mounted workspace for persistent outputs
+- Clean, isolated execution environment
 
-* Implements a structured "Role-Action-Memory" pattern.  
-* Agents maintain individual context stacks and share a global "Project State."  
-* Asynchronous execution pipeline for performance.
+### 4. Built-In Evaluation Suite
+- Supports HumanEval
+- Supports SWE-Bench‑Lite
+- Produces pass@1, latency, and token-cost metrics
 
-### **3\. Reproducible Environments**
+## Workflow Pipeline
 
-* Entire lifecycle runs inside a **Docker** container.  
-* Volume-mounted workspaces ensure that code generation is persistent, while the execution environment remains pristine.
+1. Product Manager → Parses the task and generates PRD  
+2. Architect → Converts PRD into technical design  
+3. Developer → Generates code based on design  
+4. Reviewer → Runs tests and returns feedback  
+5. Integration → Merges code, formats, generates README  
+6. Evaluation → Runs benchmarking suite  
 
-### **4\. Built-in Evaluation Suite**
+## Project Structure
 
-* Integrated **HumanEval** and **SWE-Bench-Lite** runners.  
-* Automated calculation of pass@1, pass@k, and latency metrics.
-
-## **🔄 Workflow Pipeline**
-
-The system follows a strict linear logic with iterative feedback loops:
-
-1. **PM Analysis:** Reads the task, generates a User Requirement Document (URD) and Product Requirement Document (PRD).  
-2. **Architectural Design:** Converts the PRD into a technical design, defining file structures and class hierarchies.  
-3. **Development:** The Developer Agent writes code strictly adhering to the Architect's file paths.  
-4. **Review Cycle:**  
-   * The Reviewer analyzes the code.  
-   * If issues are found: Sends specific instructions back to the Developer.  
-   * If passed: Merges to the release branch.  
-5. **Integration:** Generates README.md, installs dependencies, and formats code.  
-6. **Evaluation:** Runs the specified benchmark suite.
-
-## **🛠 Project Structure**
-
-maswe/  
-├── maswe/  
-│   ├── run\_experiment.py     \# Entry point for orchestration  
-│   ├── \_\_init\_\_.py  
-│   └── config.py             \# LLM settings  
-├── metagpt/  
-│   ├── roles/                \# Agent definitions (PM.py, Architect.py...)  
-│   ├── actions/              \# Specific skills (write\_prd.py, write\_code.py...)  
-│   └── utils/                \# Git ops, Mermaid rendering, Cost calc  
-├── workspace/                \# OUTPUT DIR (Volume mounted)  
-│   ├── \[TIMESTAMP\_ID\]/  
-│   │   ├── src/              \# Generated code  
-│   │   ├── docs/             \# Generated PRD/Design docs  
-│   │   └── logs/             \# Agent thought traces  
-├── docker/  
-│   └── Dockerfile            \# Environment definition  
+```
+maswe/
+├── maswe/
+│   ├── run_experiment.py
+│   ├── __init__.py
+│   └── config.py
+├── metagpt/
+│   ├── roles/
+│   ├── actions/
+│   └── utils/
+├── workspace/
+│   └── [TIMESTAMP_ID]/
+│       ├── src/
+│       ├── docs/
+│       └── logs/
+├── docker/
+│   └── Dockerfile
 └── requirements.txt
+```
 
-## **🚀 Installation & Usage**
+## Installation & Usage
 
-### **Prerequisites**
+### Prerequisites
+- Docker installed
+- Optional API keys for cloud inference
 
-* Docker Desktop installed and running.  
-* (Optional) API Keys for OpenAI/Anthropic if running in Cloud Mode.
+### 1. Build the Docker Image
 
-### **1\. Build the Image**
+```bash
+docker build -t maswe .
+```
 
-docker build \-t maswe .
+### 2. Run MASWE with Local LLMs
 
-### **2\. Run a Coding Task**
+```bash
+docker run --rm -it   -v $(pwd)/workspace:/app/workspace   maswe python maswe/run_experiment.py   --mode local   --model qwen2.5-coder   --task "Build a CLI-based Snake game in Python"
+```
 
-To generate a project using **Local LLMs** (requires Ollama running on host or inside container):
+### 3. Run with GPT‑4
 
-docker run \--rm \-it \\  
-  \-v $(pwd)/workspace:/app/workspace \\  
-  maswe python maswe/run\_experiment.py \\  
-  \--mode local \\  
-  \--model qwen2.5-coder \\  
-  \--task "Build a CLI-based Snake game using Python and Curses"
+```bash
+docker run --rm -it   -e OPENAI_API_KEY=sk-xxx   -v $(pwd)/workspace:/app/workspace   maswe python maswe/run_experiment.py   --mode cloud   --model gpt-4-turbo   --task "Create a FastAPI-based Todo API"
+```
 
-To use **GPT-4**:
+### 4. Run HumanEval Benchmark
 
-docker run \--rm \-it \\  
-  \-e OPENAI\_API\_KEY=sk-proj-... \\  
-  \-v $(pwd)/workspace:/app/workspace \\  
-  maswe python maswe/run\_experiment.py \\  
-  \--mode cloud \\  
-  \--model gpt-4-turbo \\  
-  \--task "Create a REST API for a Todo list using FastAPI"
+```bash
+docker run --rm -it   -v $(pwd)/workspace:/app/workspace   maswe python maswe/run_experiment.py   --eval humaneval   --n 50
+```
 
-### **3\. Run Evaluation Benchmark**
+## Evaluation & Benchmarks
 
-docker run \--rm \-it \\  
-  \-v $(pwd)/workspace:/app/workspace \\  
-  maswe python maswe/run\_experiment.py \\  
-  \--eval humaneval \\  
-  \--n 50
+Example `metrics.json`:
 
-## **📊 Evaluation & Benchmarks**
-
-MASWE automatically generates a metrics.json file after every run.
-
-| Metric | Description |
-| :---- | :---- |
-| **Pass@1** | Percentage of unit tests passed on the first attempt. |
-| **Agent Steps** | Number of iterations required in the PM → Dev → Reviewer loop. |
-| **Latency** | End-to-end time for task completion (Local vs. Cloud). |
-| **Token Cost** | Calculated usage (Input/Output tokens) based on current API pricing. |
-
-**Example Output:**
-
-{  
-  "task\_id": "snake\_game\_001",  
-  "success": true,  
-  "model": "deepseek-coder:33b",  
-  "steps": 12,  
-  "cost": 0.0,  
-  "execution\_time\_sec": 145.2  
+```json
+{
+  "task_id": "snake_game_001",
+  "success": true,
+  "model": "deepseek-coder:33b",
+  "steps": 12,
+  "cost": 0.0,
+  "execution_time_sec": 145.2
 }
+```
 
-## **🤝 Contributing**
+## Contributing
 
-Contributions are welcome\! This framework is intended for research on multi-agent collaboration.
+1. Fork the repo  
+2. Create a feature branch  
+3. Commit changes  
+4. Push  
+5. Open PR  
 
-1. Fork the repository.  
-2. Create your feature branch (git checkout \-b feature/AmazingFeature).  
-3. Commit your changes (git commit \-m 'Add some AmazingFeature').  
-4. Push to the branch (git push origin feature/AmazingFeature).  
-5. Open a Pull Request.
-
-## **📄 License**
-
-Distributed under the MIT License. See LICENSE for more information.
