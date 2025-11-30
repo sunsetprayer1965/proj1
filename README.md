@@ -210,7 +210,7 @@ Example benchmark file:
 
 # HumanEval Visualization
 
-## Overall Score  
+## Overall Score of example (Qwen2.5-Coder-7B)
 🎯 **pass@3 = 0.867（86.7%）**
 
 ---
@@ -247,6 +247,31 @@ flowchart TD
 
 ```
 ---
+
+## 🔍 Why `factorial` & `fib` Failed?
+
+Both failures are common across many coder models because HumanEval is very strict about function behavior.
+
+### ❌ `factorial` failed because:
+- Some samples returned **string messages** instead of integers  
+- Some added **extra input validation**, which HumanEval forbids  
+- A few outputs contained **explanation text** mixed with code  
+
+**HumanEval requires:**  
+Pure integer return, no validation, no extra output.
+
+### ❌ `fib` failed because:
+- Several samples produced **1-indexed Fibonacci** (incorrect)  
+- Some added **invalid input checks**  
+- Some had **off-by-one mistakes** in the loop  
+
+**HumanEval requires:**  
+`fib(0)=0`, `fib(1)=1`, no validation, correct 0-indexed sequence.
+
+### ✔ All other tasks passed cleanly  
+Qwen2.5-Coder-7B solved all remaining HumanEval tasks correctly. Only the two classic strict ones (`factorial`, `fib`) failed in pass@3.
+
+
 
 # Project Structure
 
