@@ -227,9 +227,8 @@ pie title HumanEval pass@3 (Qwen2.5-Coder-7B)
 
 ## 2. Per-Task Results
 
+```mermaid
 flowchart TD
-    title["HumanEval Per-Task Results (Pass=✓, Fail=✗)"]
-
     t0[Task 0 ✓]:::pass
     t1[Task 1 ✓]:::pass
     t2[Task 2 ✓]:::pass
@@ -243,10 +242,10 @@ flowchart TD
     t10[Task 10 ✓]:::pass
     t11[Task 11 ✓]:::pass
 
-classDef pass fill:#4CAF50,stroke:#1B5E20,color:white;
-classDef fail fill:#E53935,stroke:#B71C1C,color:white;
+    classDef pass fill:#4CAF50,stroke:#1B5E20,color:white;
+    classDef fail fill:#E53935,stroke:#B71C1C,color:white;
 
-
+```
 ---
 
 # Project Structure
