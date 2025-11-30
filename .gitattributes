@@ -1,0 +1,11 @@
+# Treat notebooks and logs as documentation or vendor so GitHub won't count them
+*.ipynb linguist-documentation
+workspace/** linguist-vendored
+agent_logs/** linguist-vendored
+analysis/** linguist-vendored
+
+# Treat Markdown as docs
+*.md linguist-documentation
+
+# Only count .py files as the primary language
+*.py linguist-language=Python

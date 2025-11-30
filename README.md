@@ -227,24 +227,25 @@ pie title HumanEval pass@3 (Qwen2.5-Coder-7B)
 
 ## 2. Per-Task Results
 
-```mermaid
-bar
-    title HumanEval per-task results (Pass = 1, Fail = 0)
-    x-axis Task ID
-    y-axis Pass@3
-    bar HumanEval/0 1
-    bar HumanEval/1 1
-    bar HumanEval/2 1
-    bar HumanEval/3 1
-    bar HumanEval/4 0
-    bar HumanEval/5 0
-    bar HumanEval/6 1
-    bar HumanEval/7 1
-    bar HumanEval/8 1
-    bar HumanEval/9 1
-    bar HumanEval/10 1
-    bar HumanEval/11 1
-```
+flowchart TD
+    title["HumanEval Per-Task Results (Pass=✓, Fail=✗)"]
+
+    t0[Task 0 ✓]:::pass
+    t1[Task 1 ✓]:::pass
+    t2[Task 2 ✓]:::pass
+    t3[Task 3 ✓]:::pass
+    t4[Task 4 ✗]:::fail
+    t5[Task 5 ✗]:::fail
+    t6[Task 6 ✓]:::pass
+    t7[Task 7 ✓]:::pass
+    t8[Task 8 ✓]:::pass
+    t9[Task 9 ✓]:::pass
+    t10[Task 10 ✓]:::pass
+    t11[Task 11 ✓]:::pass
+
+classDef pass fill:#4CAF50,stroke:#1B5E20,color:white;
+classDef fail fill:#E53935,stroke:#B71C1C,color:white;
+
 
 ---
 
