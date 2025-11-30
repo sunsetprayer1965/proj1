@@ -6,6 +6,13 @@ The system runs in a fully reproducible Docker environment and coordinates four 
 
 ---
 
+## Relationship to MetaGPT
+
+This project draws conceptual inspiration from **MetaGPT**, particularly its
+Role–Action–Memory paradigm for multi-agent collaboration. MASWE extends these
+ideas to support local LLM inference (Qwen/DeepSeek via Ollama), lightweight
+orchestration, and integrated evaluation pipelines such as HumanEval
+
 # Table of Contents
 
 - Overview  
