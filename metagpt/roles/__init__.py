@@ -6,22 +6,30 @@
 @File    : __init__.py
 """
 
-from metagpt.roles.role import Role
-from metagpt.roles.architect import Architect
-from metagpt.roles.project_manager import ProjectManager
-from metagpt.roles.product_manager import ProductManager
-from metagpt.roles.engineer import Engineer
-from metagpt.roles.qa_engineer import QaEngineer
-from metagpt.roles.searcher import Searcher
-from metagpt.roles.sales import Sales
-from metagpt.roles.customer_service import CustomerService
+# Core roles
+from .role import Role
+from .product_manager import ProductManager
+from .architect import Architect
+from .project_manager import ProjectManager
 
+# Engineering roles
+from .developer import Developer          # ← your custom developer
+from .reviewer import Reviewer            # ← reviewer class
+from .engineer import Engineer
+from .qa_engineer import QaEngineer
+
+# Other roles
+from .searcher import Searcher
+from .sales import Sales
+from .customer_service import CustomerService
 
 __all__ = [
     "Role",
     "Architect",
     "ProjectManager",
     "ProductManager",
+    "Developer",
+    "Reviewer",
     "Engineer",
     "QaEngineer",
     "Searcher",

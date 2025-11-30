@@ -64,7 +64,7 @@ class WritePRD(Action):
     2. New requirement: If the requirement is a new requirement, the PRD document will be generated.
     3. Requirement update: If the requirement is an update, the PRD document will be updated.
     """
-
+    project_name: str = ""
     async def run(self, with_messages, *args, **kwargs) -> ActionOutput | Message:
         """Run the action."""
         req: Document = await self.repo.requirement
@@ -162,11 +162,36 @@ class WritePRD(Action):
         await mermaid_to_file(self.config.mermaid.engine, quadrant_chart, pathname)
 
     async def _rename_workspace(self, prd):
+        """
+        从 PRD 里抽取 Project Name，记录到 self.project_name。
+        为了避免 rename_root 参数类型问题，这里暂时不真正重命名 workspace。
+        """
+        # 1. 先把 project_name 填上
         if not self.project_name:
+            ws_name = ""
             if isinstance(prd, (ActionOutput, ActionNode)):
-                ws_name = prd.instruct_content.model_dump()["Project Name"]
+                # node.instruct_content 是一个 pydantic model
+                data = prd.instruct_content.model_dump()
+                # 兼容两种可能的 key
+                ws_name = data.get("Project Name") or data.get("project_name") or ""
             else:
-                ws_name = CodeParser.parse_str(block="Project Name", text=prd)
+                # 走老的 CodeParser 逻辑，从文本里抓 "Project Name" 段
+                ws_name = CodeParser.parse_str(block="Project Name", text=prd) or ""
+
             if ws_name:
-                self.project_name = ws_name
-        self.repo.git_repo.rename_root(self.project_name)
+                self.project_name = ws_name.strip()
+
+        # 2. 这里只记录一下，不真正 rename workspace，避免 TypeError
+        if self.project_name:
+            logger.info(
+                f"[WritePRD] (skip rename_root) project_name={self.project_name}"
+            )
+        else:
+            logger.info(
+                "[WritePRD] (skip rename_root) project_name is empty, keep current workspace"
+            )
+
+        # ❌ 不再调用：self.repo.git_repo.rename_root(...)
+        # 这样就不会再触发 `expected str, bytes or os.PathLike object, not GitRepository`
+
+

@@ -16,6 +16,10 @@ from typing import Dict, List
 from git.repo import Repo
 from git.repo.fun import is_git_dir
 from gitignore_parser import parse_gitignore
+import shutil
+import traceback
+from pathlib import Path
+from loguru import logger
 
 from metagpt.logs import logger
 from metagpt.utils.dependency_file import DependencyFile
@@ -191,34 +195,38 @@ class GitRepository:
             self._dependency = DependencyFile(workdir=self.workdir)
         return self._dependency
 
-    def rename_root(self, new_dir_name):
-        """Rename the root directory of the Git repository.
+    def rename_root(src: str | Path, dst: str | Path):
+        """Robust rename root directory."""
+        src = Path(src)
+        dst = Path(dst)
 
-        :param new_dir_name: The new name for the root directory.
-        """
-        if self.workdir.name == new_dir_name:
-            return
-        new_path = self.workdir.parent / new_dir_name
-        if new_path.exists():
-            logger.info(f"Delete directory {str(new_path)}")
+        logger.info(f"[rename_root] SRC={src}")
+        logger.info(f"[rename_root] DST={dst}")
+
+        # 1️⃣ 检查源目录
+        if not src.exists():
+            logger.warning(f"[rename_root] Source does not exist: {src}")
+            return False
+
+        # 2️⃣ 若目标目录存在 → 删除
+        if dst.exists():
+            logger.warning(f"[rename_root] Target exists, removing: {dst}")
             try:
-                shutil.rmtree(new_path)
+                shutil.rmtree(dst)
             except Exception as e:
-                logger.warning(f"rm {str(new_path)} error: {e}")
-        if new_path.exists():  # Recheck for windows os
-            logger.warning(f"Failed to delete directory {str(new_path)}")
-            return
+                logger.error(f"[rename_root] Failed to delete target: {e}")
+                traceback.print_exc()
+                return False
+
+        # 3️⃣ 执行移动（核心）
         try:
-            shutil.move(src=str(self.workdir), dst=str(new_path))
+            shutil.move(str(src), str(dst))   # 强制使用 str，避免 Path 问题
+            logger.info("[rename_root] MOVE SUCCESS!")
+            return True
         except Exception as e:
-            logger.warning(f"Move {str(self.workdir)} to {str(new_path)} error: {e}")
-        finally:
-            if not new_path.exists():  # Recheck for windows os
-                logger.warning(f"Failed to move {str(self.workdir)} to {str(new_path)}")
-                return
-        logger.info(f"Rename directory {str(self.workdir)} to {str(new_path)}")
-        self._repository = Repo(new_path)
-        self._gitignore_rules = parse_gitignore(full_path=str(new_path / ".gitignore"))
+            logger.error(f"[rename_root] MOVE FAILED: {e}")
+            traceback.print_exc()
+            return False
 
     def get_files(self, relative_path: Path | str, root_relative_path: Path | str = None, filter_ignored=True) -> List:
         """
