@@ -9,3 +9,6 @@ analysis/** linguist-vendored
 
 # Only count .py files as the primary language
 *.py linguist-language=Python
+
+# HTML code is incorrectly calculated into statistics, so ignore them
+*.html linguist-detectable=false
